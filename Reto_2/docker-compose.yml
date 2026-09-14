@@ -1,0 +1,114 @@
+version: "3.9"
+
+services:
+
+  # ------------------------------------------------------------------
+  # Base de datos - Empleados
+  # ------------------------------------------------------------------
+  database-empleados:
+    image: postgres:16-alpine
+    container_name: database-empleados
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${DB_EMPLEADOS_NAME}
+      POSTGRES_USER: ${DB_EMPLEADOS_USER}
+      POSTGRES_PASSWORD: ${DB_EMPLEADOS_PASSWORD}
+    volumes:
+      - vol-empleados:/var/lib/postgresql/data
+      - ./empleados/init.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
+    healthcheck:
+      # pg_isready responde 0 solo cuando PostgreSQL acepta conexiones
+      test: ["CMD-SHELL", "pg_isready -U ${DB_EMPLEADOS_USER} -d ${DB_EMPLEADOS_NAME}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 10s
+    networks:
+      - microservices-network
+    # No exponemos el puerto al host: solo empleados-service necesita hablarle,
+    # y lo hace por la red interna de Docker, no por localhost.
+
+  # ------------------------------------------------------------------
+  # Base de datos - Departamentos
+  # ------------------------------------------------------------------
+  database-departamentos:
+    image: postgres:16-alpine
+    container_name: database-departamentos
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${DB_DEPARTAMENTOS_NAME}
+      POSTGRES_USER: ${DB_DEPARTAMENTOS_USER}
+      POSTGRES_PASSWORD: ${DB_DEPARTAMENTOS_PASSWORD}
+    volumes:
+      - vol-departamentos:/var/lib/postgresql/data
+      - ./departamentos/init.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_DEPARTAMENTOS_USER} -d ${DB_DEPARTAMENTOS_NAME}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 10s
+    networks:
+      - microservices-network
+
+  # ------------------------------------------------------------------
+  # Servicio de Departamentos (Node.js / Express)
+  # ------------------------------------------------------------------
+  departamentos-service:
+    build: ./departamentos
+    container_name: departamentos-service
+    restart: unless-stopped
+    environment:
+      PORT: 8081
+      DB_HOST: database-departamentos
+      DB_PORT: 5432
+      DB_NAME: ${DB_DEPARTAMENTOS_NAME}
+      DB_USER: ${DB_DEPARTAMENTOS_USER}
+      DB_PASSWORD: ${DB_DEPARTAMENTOS_PASSWORD}
+    depends_on:
+      database-departamentos:
+        condition: service_healthy
+    ports:
+      - "8081:8081"
+    networks:
+      - microservices-network
+    healthcheck:
+      # Requiere curl instalado en la imagen (ver Dockerfile del servicio)
+      test: ["CMD", "curl", "-f", "http://localhost:8081/departamentos"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
+
+  # ------------------------------------------------------------------
+  # Servicio de Empleados (Python / FastAPI)
+  # ------------------------------------------------------------------
+  empleados-service:
+    build: ./empleados
+    container_name: empleados-service
+    restart: unless-stopped
+    environment:
+      PORT: 8080
+      DB_HOST: database-empleados
+      DB_PORT: 5432
+      DB_NAME: ${DB_EMPLEADOS_NAME}
+      DB_USER: ${DB_EMPLEADOS_USER}
+      DB_PASSWORD: ${DB_EMPLEADOS_PASSWORD}
+      DEPARTAMENTOS_SERVICE_URL: http://departamentos-service:8081
+    depends_on:
+      database-empleados:
+        condition: service_healthy
+      departamentos-service:
+        condition: service_healthy
+    ports:
+      - "8080:8080"
+    networks:
+      - microservices-network
+
+networks:
+  microservices-network:
+    driver: bridge
+
+volumes:
+  vol-empleados:
+  vol-departamentos:
