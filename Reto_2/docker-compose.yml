@@ -1,62 +1,42 @@
-version: "3.9"
-
 services:
-
-  # ------------------------------------------------------------------
-  # Base de datos - Empleados
-  # ------------------------------------------------------------------
   database-empleados:
     image: postgres:16-alpine
-    container_name: database-empleados
     restart: unless-stopped
     environment:
-      POSTGRES_DB: ${DB_EMPLEADOS_NAME}
-      POSTGRES_USER: ${DB_EMPLEADOS_USER}
-      POSTGRES_PASSWORD: ${DB_EMPLEADOS_PASSWORD}
+      POSTGRES_DB: ${DB_EMPLEADOS_NAME:?Configure DB_EMPLEADOS_NAME en .env}
+      POSTGRES_USER: ${DB_EMPLEADOS_USER:?Configure DB_EMPLEADOS_USER en .env}
+      POSTGRES_PASSWORD: ${DB_EMPLEADOS_PASSWORD:?Configure DB_EMPLEADOS_PASSWORD en .env}
     volumes:
       - vol-empleados:/var/lib/postgresql/data
       - ./empleados/init.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
     healthcheck:
-      # pg_isready responde 0 solo cuando PostgreSQL acepta conexiones
-      test: ["CMD-SHELL", "pg_isready -U ${DB_EMPLEADOS_USER} -d ${DB_EMPLEADOS_NAME}"]
+      test: [CMD-SHELL, 'pg_isready -h 127.0.0.1 -U "$${POSTGRES_USER}" -d "$${POSTGRES_DB}" && PGPASSWORD="$${POSTGRES_PASSWORD}" psql -h 127.0.0.1 -U "$${POSTGRES_USER}" -d "$${POSTGRES_DB}" -tAc "SELECT id FROM empleados LIMIT 1" >/dev/null']
       interval: 5s
-      timeout: 3s
-      retries: 10
-      start_period: 10s
-    networks:
-      - microservices-network
-    # No exponemos el puerto al host: solo empleados-service necesita hablarle,
-    # y lo hace por la red interna de Docker, no por localhost.
+      timeout: 5s
+      retries: 15
+      start_period: 15s
+    networks: [empleados-db]
 
-  # ------------------------------------------------------------------
-  # Base de datos - Departamentos
-  # ------------------------------------------------------------------
   database-departamentos:
     image: postgres:16-alpine
-    container_name: database-departamentos
     restart: unless-stopped
     environment:
-      POSTGRES_DB: ${DB_DEPARTAMENTOS_NAME}
-      POSTGRES_USER: ${DB_DEPARTAMENTOS_USER}
-      POSTGRES_PASSWORD: ${DB_DEPARTAMENTOS_PASSWORD}
+      POSTGRES_DB: ${DB_DEPARTAMENTOS_NAME:?Configure DB_DEPARTAMENTOS_NAME en .env}
+      POSTGRES_USER: ${DB_DEPARTAMENTOS_USER:?Configure DB_DEPARTAMENTOS_USER en .env}
+      POSTGRES_PASSWORD: ${DB_DEPARTAMENTOS_PASSWORD:?Configure DB_DEPARTAMENTOS_PASSWORD en .env}
     volumes:
       - vol-departamentos:/var/lib/postgresql/data
       - ./departamentos/init.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${DB_DEPARTAMENTOS_USER} -d ${DB_DEPARTAMENTOS_NAME}"]
+      test: [CMD-SHELL, 'pg_isready -h 127.0.0.1 -U "$${POSTGRES_USER}" -d "$${POSTGRES_DB}" && PGPASSWORD="$${POSTGRES_PASSWORD}" psql -h 127.0.0.1 -U "$${POSTGRES_USER}" -d "$${POSTGRES_DB}" -tAc "SELECT id FROM departamentos LIMIT 1" >/dev/null']
       interval: 5s
-      timeout: 3s
-      retries: 10
-      start_period: 10s
-    networks:
-      - microservices-network
+      timeout: 5s
+      retries: 15
+      start_period: 15s
+    networks: [departamentos-db]
 
-  # ------------------------------------------------------------------
-  # Servicio de Departamentos (Node.js / Express)
-  # ------------------------------------------------------------------
   departamentos-service:
     build: ./departamentos
-    container_name: departamentos-service
     restart: unless-stopped
     environment:
       PORT: 8081
@@ -68,46 +48,51 @@ services:
     depends_on:
       database-departamentos:
         condition: service_healthy
-    ports:
-      - "8081:8081"
-    networks:
-      - microservices-network
+    ports: ["127.0.0.1:${DEPARTAMENTOS_PORT:-8081}:8081"]
+    networks: [microservices-network, departamentos-db]
     healthcheck:
-      # Requiere curl instalado en la imagen (ver Dockerfile del servicio)
-      test: ["CMD", "curl", "-f", "http://localhost:8081/departamentos"]
-      interval: 10s
+      test: [CMD, node, -e, "fetch('http://127.0.0.1:8081/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 5s
       timeout: 3s
-      retries: 5
+      retries: 10
       start_period: 10s
 
-  # ------------------------------------------------------------------
-  # Servicio de Empleados (Python / FastAPI)
-  # ------------------------------------------------------------------
   empleados-service:
-    build: ./empleados
-    container_name: empleados-service
+    build:
+      context: ..
+      dockerfile: Reto_2/empleados/Dockerfile
     restart: unless-stopped
     environment:
-      PORT: 8080
       DB_HOST: database-empleados
       DB_PORT: 5432
       DB_NAME: ${DB_EMPLEADOS_NAME}
       DB_USER: ${DB_EMPLEADOS_USER}
       DB_PASSWORD: ${DB_EMPLEADOS_PASSWORD}
-      DEPARTAMENTOS_SERVICE_URL: http://departamentos-service:8081
+      DEPARTAMENTOS_SERVICE_URL: ${DEPARTAMENTOS_SERVICE_URL:-http://departamentos-service:8081}
+      DEPARTAMENTOS_TIMEOUT_SECONDS: ${DEPARTAMENTOS_TIMEOUT_SECONDS:-2}
+      DEPARTAMENTOS_MAX_RETRIES: ${DEPARTAMENTOS_MAX_RETRIES:-3}
+      DEPARTAMENTOS_BACKOFF_SECONDS: ${DEPARTAMENTOS_BACKOFF_SECONDS:-1}
     depends_on:
       database-empleados:
         condition: service_healthy
       departamentos-service:
         condition: service_healthy
-    ports:
-      - "8080:8080"
-    networks:
-      - microservices-network
+    ports: ["127.0.0.1:${EMPLEADOS_PORT:-8080}:8080"]
+    networks: [microservices-network, empleados-db]
+    healthcheck:
+      test: [CMD, python, -c, "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/health', timeout=2)"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 10s
 
 networks:
   microservices-network:
     driver: bridge
+  empleados-db:
+    internal: true
+  departamentos-db:
+    internal: true
 
 volumes:
   vol-empleados:

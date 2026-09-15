@@ -9,3 +9,4 @@ __pycache__
 tests
 pruebas.ps1
 .tmp
+.env
