@@ -1,11 +1,13 @@
+# Valores públicos de demostración para arrancar tras clonar sin crear .env.
+# Un .env local o variables del entorno pueden sobrescribirlos.
 services:
   database-empleados:
     image: postgres:16-alpine
     restart: unless-stopped
     environment:
-      POSTGRES_DB: ${DB_EMPLEADOS_NAME:?Configure DB_EMPLEADOS_NAME en .env}
-      POSTGRES_USER: ${DB_EMPLEADOS_USER:?Configure DB_EMPLEADOS_USER en .env}
-      POSTGRES_PASSWORD: ${DB_EMPLEADOS_PASSWORD:?Configure DB_EMPLEADOS_PASSWORD en .env}
+      POSTGRES_DB: ${DB_EMPLEADOS_NAME:-empleados_db}
+      POSTGRES_USER: ${DB_EMPLEADOS_USER:-empleados_user}
+      POSTGRES_PASSWORD: ${DB_EMPLEADOS_PASSWORD:-empleados_local_demo}
     volumes:
       - vol-empleados:/var/lib/postgresql/data
       - ./empleados/init.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
@@ -21,9 +23,9 @@ services:
     image: postgres:16-alpine
     restart: unless-stopped
     environment:
-      POSTGRES_DB: ${DB_DEPARTAMENTOS_NAME:?Configure DB_DEPARTAMENTOS_NAME en .env}
-      POSTGRES_USER: ${DB_DEPARTAMENTOS_USER:?Configure DB_DEPARTAMENTOS_USER en .env}
-      POSTGRES_PASSWORD: ${DB_DEPARTAMENTOS_PASSWORD:?Configure DB_DEPARTAMENTOS_PASSWORD en .env}
+      POSTGRES_DB: ${DB_DEPARTAMENTOS_NAME:-departamentos_db}
+      POSTGRES_USER: ${DB_DEPARTAMENTOS_USER:-departamentos_user}
+      POSTGRES_PASSWORD: ${DB_DEPARTAMENTOS_PASSWORD:-departamentos_local_demo}
     volumes:
       - vol-departamentos:/var/lib/postgresql/data
       - ./departamentos/init.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
@@ -42,9 +44,9 @@ services:
       PORT: 8081
       DB_HOST: database-departamentos
       DB_PORT: 5432
-      DB_NAME: ${DB_DEPARTAMENTOS_NAME}
-      DB_USER: ${DB_DEPARTAMENTOS_USER}
-      DB_PASSWORD: ${DB_DEPARTAMENTOS_PASSWORD}
+      DB_NAME: ${DB_DEPARTAMENTOS_NAME:-departamentos_db}
+      DB_USER: ${DB_DEPARTAMENTOS_USER:-departamentos_user}
+      DB_PASSWORD: ${DB_DEPARTAMENTOS_PASSWORD:-departamentos_local_demo}
     depends_on:
       database-departamentos:
         condition: service_healthy
@@ -65,9 +67,9 @@ services:
     environment:
       DB_HOST: database-empleados
       DB_PORT: 5432
-      DB_NAME: ${DB_EMPLEADOS_NAME}
-      DB_USER: ${DB_EMPLEADOS_USER}
-      DB_PASSWORD: ${DB_EMPLEADOS_PASSWORD}
+      DB_NAME: ${DB_EMPLEADOS_NAME:-empleados_db}
+      DB_USER: ${DB_EMPLEADOS_USER:-empleados_user}
+      DB_PASSWORD: ${DB_EMPLEADOS_PASSWORD:-empleados_local_demo}
       DEPARTAMENTOS_SERVICE_URL: ${DEPARTAMENTOS_SERVICE_URL:-http://departamentos-service:8081}
       DEPARTAMENTOS_TIMEOUT_SECONDS: ${DEPARTAMENTOS_TIMEOUT_SECONDS:-2}
       DEPARTAMENTOS_MAX_RETRIES: ${DEPARTAMENTOS_MAX_RETRIES:-3}

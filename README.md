@@ -66,7 +66,6 @@ Para Reto 2:
 
 ```powershell
 Set-Location D:\Repositorios_UQ\Micro\Reto_2
-if (!(Test-Path .env)) { Copy-Item .env.example .env }
 docker compose up --build
 # En otra terminal ubicada en Reto_2:
 docker compose ps
@@ -75,6 +74,8 @@ docker compose down
 
 Los ejemplos de solicitudes, Swagger, pruebas y gestión de volúmenes están en el
 README de cada reto. No hay un Compose en la raíz: cada reto tiene su propio ciclo de ejecución.
+Reto 2 incluye valores públicos de demostración para arrancar sin pasos manuales.
+Un `.env` local es opcional para personalizarlos y permanece fuera de Git.
 
 ## Tecnologías utilizadas
 

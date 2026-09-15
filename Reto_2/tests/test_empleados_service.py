@@ -29,11 +29,22 @@ def api():
 
 def test_modelo_canonico_y_alta_completa(api):
     client, repo, departments = api
-    assert Empleado is Original
+    assert issubclass(Empleado, Original)
+    assert set(Empleado.model_fields) == set(Original.model_fields)
     response = client.post('/empleados', json=EMPLEADO_EJEMPLO)
     assert response.status_code == 201
     assert response.json() == EMPLEADO_EJEMPLO
     departments.validar.assert_called_once_with('IT')
+
+
+def test_ejemplo_docente_sin_estado_asigna_activo(api):
+    client, repo, _ = api
+    payload = {key: value for key, value in EMPLEADO_EJEMPLO.items() if key != 'estado'}
+    response = client.post('/empleados', json=payload)
+    assert response.status_code == 201
+    assert response.json() == EMPLEADO_EJEMPLO
+    assert repo.crear.call_args.args[0].estado == 'ACTIVO'
+    assert Original.model_fields['estado'].is_required()
 
 
 @pytest.mark.parametrize('email,numero,expected', [(True, True, 'email'), (False, True, 'número')])
@@ -42,7 +53,8 @@ def test_orden_unicidad_antes_de_http(api, email, numero, expected):
     repo.existe_email.return_value = email
     repo.existe_numero.return_value = numero
     departments.validar.side_effect = HTTPException(400, 'Departamento inexistente')
-    response = client.post('/empleados', json=EMPLEADO_EJEMPLO)
+    payload = {key: value for key, value in EMPLEADO_EJEMPLO.items() if key != 'estado'}
+    response = client.post('/empleados', json=payload)
     assert response.status_code == 400
     assert expected in response.json()['detail']
     if email:

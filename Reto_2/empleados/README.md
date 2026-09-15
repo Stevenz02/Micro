@@ -2,6 +2,8 @@
 
 Python 3.12/FastAPI, HTTPX y Psycopg 3; PostgreSQL 16 propio.
 Conserva el modelo de `Reto_1/app/models.py` mediante importación, sin duplicarlo.
+La subclase del Reto 2 solo permite omitir `estado` en el POST y asigna ACTIVO;
+se mantienen los diez campos persistidos y todas las validaciones originales.
 
 | Método | Ruta | Resultado |
 |--------|------|-----------|
