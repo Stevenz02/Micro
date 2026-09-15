@@ -1,26 +1,16 @@
-# ---------- Etapa 1: build ----------
-# Instalamos las dependencias en una imagen que trae herramientas de
-# compilación, por si alguna librería de requirements.txt las necesita.
-FROM python:3.12 AS builder
+FROM python:3.12-slim AS builder
+WORKDIR /build
+COPY Reto_2/empleados/requirements.txt .
+RUN pip install --no-cache-dir --prefix=/install -r requirements.txt
 
-WORKDIR /app
-
-COPY requirements.txt .
-RUN pip install --no-cache-dir --user -r requirements.txt
-
-# ---------- Etapa 2: imagen final ----------
-# Imagen liviana que solo lleva lo necesario para EJECUTAR la app,
-# sin compiladores ni cachés de instalación.
 FROM python:3.12-slim
-
 WORKDIR /app
-
-# Copiamos únicamente las dependencias ya instaladas desde la etapa builder
-COPY --from=builder /root/.local /root/.local
-COPY app ./app
-
-ENV PATH=/root/.local/bin:$PATH
-
+ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1
+COPY --from=builder /install /usr/local
+# Solo se comparte el contrato, no el repositorio en memoria ni los endpoints.
+COPY Reto_1/app/models.py ./Reto_1/app/models.py
+COPY Reto_2/empleados/app ./Reto_2/empleados/app
+RUN useradd --create-home appuser
+USER appuser
 EXPOSE 8080
-
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8080"]
+CMD ["uvicorn", "Reto_2.empleados.app.main:app", "--host", "0.0.0.0", "--port", "8080"]

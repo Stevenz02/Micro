@@ -1,32 +1,14 @@
-# ---------- Etapa 1: build ----------
-# Instalamos TODAS las dependencias (incluidas devDependencies, por si
-# usan TypeScript, linters, etc. en el futuro) en una imagen completa.
-FROM node:20-alpine AS builder
-
+FROM node:22-alpine AS dependencies
 WORKDIR /app
+COPY package.json package-lock.json ./
+RUN npm ci --omit=dev
 
-COPY package*.json ./
-RUN npm install
-
-COPY . .
-
-# Si en el futuro usan TypeScript, aquí iría: RUN npm run build
-
-# ---------- Etapa 2: imagen final ----------
-# Imagen liviana que solo lleva las dependencias de producción y el
-# código ya listo para ejecutar.
-FROM node:20-alpine
-
+FROM node:22-alpine
 WORKDIR /app
-
-# curl es necesario para el healthcheck definido en docker-compose.yml
-RUN apk add --no-cache curl
-
-COPY package*.json ./
-RUN npm install --omit=dev
-
-COPY --from=builder /app/src ./src
-
+ENV NODE_ENV=production PORT=8081
+COPY --from=dependencies /app/node_modules ./node_modules
+COPY package.json ./
+COPY src ./src
+USER node
 EXPOSE 8081
-
 CMD ["node", "src/index.js"]

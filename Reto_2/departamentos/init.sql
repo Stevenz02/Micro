@@ -1,7 +1,6 @@
--- Se ejecuta SOLO la primera vez que el volumen está vacío.
-
-CREATE TABLE IF NOT EXISTS departamentos (
-    id          VARCHAR(20) PRIMARY KEY,
-    nombre      VARCHAR(100) NOT NULL,
-    descripcion VARCHAR(255)
+-- Inicialización exclusiva de volúmenes vacíos.
+CREATE TABLE departamentos (
+    id          TEXT PRIMARY KEY CHECK (length(btrim(id)) > 0),
+    nombre      TEXT NOT NULL CHECK (length(btrim(nombre)) > 0),
+    descripcion TEXT NOT NULL CHECK (length(btrim(descripcion)) > 0)
 );
