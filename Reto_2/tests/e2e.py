@@ -18,6 +18,11 @@ import uuid
 ROOT = Path(__file__).resolve().parents[1]
 PROJECT = f"micro-reto2-e2e-{uuid.uuid4().hex[:8]}"
 ENV = os.environ.copy()
+# Prueba los valores de demostración de Compose sin un .env ni credenciales
+# heredadas del host, tal como sucede al clonar en otra máquina.
+for name in list(ENV):
+    if name.startswith(('DB_EMPLEADOS_', 'DB_DEPARTAMENTOS_')):
+        ENV.pop(name)
 
 
 def free_port():
@@ -38,7 +43,7 @@ ENV.update(EMPLEADOS_PORT=str(EMP_PORT), DEPARTAMENTOS_PORT=str(DEP_PORT),
 def compose(*args, capture=False):
     print(f'[{PROJECT}] docker compose {" ".join(args)}', flush=True)
     result = subprocess.run(
-        ['docker', 'compose', '--env-file', str(ROOT / '.env.example'), '-p', PROJECT, *args],
+        ['docker', 'compose', '--env-file', os.devnull, '-p', PROJECT, *args],
         cwd=ROOT, env=ENV, text=True, encoding='utf-8', errors='replace',
         capture_output=capture, check=True, timeout=600,
     )
@@ -72,6 +77,7 @@ EMPLOYEE = {
     'numeroEmpleado': 'EMP-2026-001', 'cargo': 'Desarrollador Senior', 'area': 'Tecnología',
     'departamentoId': 'IT', 'fechaIngreso': '2026-02-10', 'estado': 'ACTIVO',
 }
+EMPLOYEE_REQUEST = {key: value for key, value in EMPLOYEE.items() if key != 'estado'}
 
 
 def main():
@@ -92,7 +98,7 @@ def main():
             assert {'200', '404'} <= set(spec['paths'][f'/{resource}/{{id}}']['get']['responses'])
         assert 'SwaggerUIBundle' in request(DEP_PORT, '/docs/swagger-ui-bundle.js')
         assert request(DEP_PORT, '/departamentos', 201, DEPARTMENT) == DEPARTMENT
-        assert request(EMP_PORT, '/empleados', 201, EMPLOYEE) == EMPLOYEE
+        assert request(EMP_PORT, '/empleados', 201, EMPLOYEE_REQUEST) == EMPLOYEE
         assert request(DEP_PORT, '/departamentos/IT') == DEPARTMENT
         assert request(EMP_PORT, '/empleados/E001') == EMPLOYEE
         assert request(EMP_PORT, '/empleados') == [EMPLOYEE]
@@ -101,13 +107,13 @@ def main():
         request(DEP_PORT, '/departamentos', 400, DEPARTMENT)
 
         assert 'email' in request(EMP_PORT, '/empleados', 400, {
-            **EMPLOYEE, 'id': 'E002', 'departamentoId': 'MISSING',
+            **EMPLOYEE_REQUEST, 'id': 'E002', 'departamentoId': 'MISSING',
         })['detail']
         assert 'número' in request(EMP_PORT, '/empleados', 400, {
-            **EMPLOYEE, 'id': 'E003', 'email': 'otro@empresa.com', 'departamentoId': 'MISSING',
+            **EMPLOYEE_REQUEST, 'id': 'E003', 'email': 'otro@empresa.com', 'departamentoId': 'MISSING',
         })['detail']
         assert 'no existe' in request(EMP_PORT, '/empleados', 400, {
-            **EMPLOYEE, 'id': 'E004', 'email': 'nuevo@empresa.com', 'numeroEmpleado': 'NUEVO', 'departamentoId': 'MISSING',
+            **EMPLOYEE_REQUEST, 'id': 'E004', 'email': 'nuevo@empresa.com', 'numeroEmpleado': 'NUEVO', 'departamentoId': 'MISSING',
         })['detail']
         assert 'id' in request(EMP_PORT, '/empleados', 400, {
             **EMPLOYEE, 'email': 'id@empresa.com', 'numeroEmpleado': 'ID',

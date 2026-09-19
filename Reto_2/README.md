@@ -17,12 +17,12 @@ flowchart LR
     BD --- VD[vol-departamentos]
 ```
 
-| Componente | Stack | Puerto host | Puerto contenedor |
-|------------|-------|-------------|-------------------|
-| empleados-service | Python 3.12, FastAPI, HTTPX, Psycopg 3 | 8080 | 8080 |
-| departamentos-service | JavaScript, Node.js 22, Express 5, pg | 8081 | 8081 |
-| database-empleados | PostgreSQL 16 | No publicado | 5432 |
-| database-departamentos | PostgreSQL 16 | No publicado | 5432 |
+| Componente | Lenguaje / stack | Motor / base propia | Puerto host | Puerto contenedor |
+|------------|------------------|---------------------|-------------|-------------------|
+| empleados-service | Python 3.12, FastAPI, HTTPX, Psycopg 3 | PostgreSQL 16 / database-empleados | 8080 | 8080 |
+| departamentos-service | JavaScript, Node.js 22, Express 5, pg | PostgreSQL 16 / database-departamentos | 8081 | 8081 |
+| database-empleados | PostgreSQL | PostgreSQL 16 | No publicado | 5432 |
+| database-departamentos | PostgreSQL | PostgreSQL 16 | No publicado | 5432 |
 
 Las APIs comparten `microservices-network`. Cada BD está en una red interna
 separada junto a su API; ninguna API comparte red ni credenciales con la BD ajena.
@@ -45,8 +45,6 @@ Desde `D:\Repositorios_UQ\Micro`:
 
 ```powershell
 Set-Location D:\Repositorios_UQ\Micro\Reto_2
-if (!(Test-Path .env)) { Copy-Item .env.example .env }
-docker compose config --quiet
 docker compose up --build
 ```
 
@@ -68,13 +66,16 @@ si departamentos falla, empleados sigue sirviendo consultas y controla los regis
 
 ## Variables de entorno
 
-`.env` es local e ignorado por Git. `.env.example` contiene valores de demostración,
-no secretos de producción. No sobrescribir un `.env` existente para ejecutar pruebas.
+No se necesita crear `.env` para arrancar: Compose incluye valores públicos de
+demostración iguales a `.env.example`. La aplicación recibe las credenciales
+mediante variables de entorno, nunca desde constantes en su código.
+Para personalizar, copiar opcionalmente `.env.example` a `.env` y editarlo.
+`.env` es local e ignorado por Git. No sobrescribir uno existente para ejecutar pruebas.
 
 | Variable en `.env` | Uso / valor predeterminado |
 |-------------------|---------------------------|
-| `DB_EMPLEADOS_NAME`, `DB_EMPLEADOS_USER`, `DB_EMPLEADOS_PASSWORD` | Obligatorios, base de empleados |
-| `DB_DEPARTAMENTOS_NAME`, `DB_DEPARTAMENTOS_USER`, `DB_DEPARTAMENTOS_PASSWORD` | Obligatorios, base de departamentos |
+| `DB_EMPLEADOS_NAME`, `DB_EMPLEADOS_USER`, `DB_EMPLEADOS_PASSWORD` | Por defecto: `empleados_db`, `empleados_user`, `empleados_local_demo` |
+| `DB_DEPARTAMENTOS_NAME`, `DB_DEPARTAMENTOS_USER`, `DB_DEPARTAMENTOS_PASSWORD` | Por defecto: `departamentos_db`, `departamentos_user`, `departamentos_local_demo` |
 | `EMPLEADOS_PORT` | Puerto publicado en 127.0.0.1; 8080 |
 | `DEPARTAMENTOS_PORT` | Puerto publicado en 127.0.0.1; 8081 |
 | `DEPARTAMENTOS_SERVICE_URL` | `http://departamentos-service:8081` |
@@ -142,8 +143,11 @@ Invoke-RestMethod http://localhost:8080/empleados
 Invoke-RestMethod http://localhost:8081/departamentos/IT
 ```
 
-Los diez campos son obligatorios. `estado` solo acepta ACTIVO, y el INSERT también
-lo fija en ACTIVO. El email se normaliza a minúsculas, igual que en Reto 1.
+Se conservan y persisten los diez campos. En Reto 2 se puede omitir `estado` en el
+POST, como en los ejemplos del docente: se asigna ACTIVO automáticamente. Si se
+envía, solo acepta ACTIVO, y el INSERT también lo fija en ACTIVO. Los otros nueve
+campos son obligatorios. El email se normaliza a minúsculas, igual que en Reto 1.
+Esta adaptación hereda el modelo original y no modifica el contrato de Reto 1.
 
 El orden de validaciones de negocio, una vez validado el formato, es:
 
@@ -253,7 +257,9 @@ Pop-Location
 .\.venv\Scripts\python.exe Reto_2/tests/e2e.py
 ```
 
-La prueba E2E usa `.env.example`, un nombre de proyecto aleatorio y puertos libres.
+La prueba E2E desactiva la carga del `.env` mediante el dispositivo nulo del sistema
+y elimina las variables de credenciales heredadas: verifica los valores por defecto
+de Compose, un nombre de proyecto aleatorio y puertos libres.
 Verifica arranque, healthy, logs, Swagger/OpenAPI, altas, campos completos, errores,
 24 peticiones concurrentes, timeout real mediante `pause`, recuperación,
 persistencia con `down` y eliminación con `down -v`. Al terminar limpia exclusivamente
