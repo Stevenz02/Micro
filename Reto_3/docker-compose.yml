@@ -1,0 +1,141 @@
+services:
+
+  # ------------------------------------------------------------------
+  # Base de datos - Empleados
+  # ------------------------------------------------------------------
+  database-empleados:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${DB_EMPLEADOS_NAME:?Configure DB_EMPLEADOS_NAME en .env}
+      POSTGRES_USER: ${DB_EMPLEADOS_USER:?Configure DB_EMPLEADOS_USER en .env}
+      POSTGRES_PASSWORD: ${DB_EMPLEADOS_PASSWORD:?Configure DB_EMPLEADOS_PASSWORD en .env}
+    volumes:
+      - vol-empleados:/var/lib/postgresql/data
+      - ./empleados/init.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", 'pg_isready -h 127.0.0.1 -U "$${POSTGRES_USER}" -d "$${POSTGRES_DB}" && PGPASSWORD="$${POSTGRES_PASSWORD}" psql -h 127.0.0.1 -U "$${POSTGRES_USER}" -d "$${POSTGRES_DB}" -tAc "SELECT id FROM empleados LIMIT 1" >/dev/null']
+      interval: 5s
+      timeout: 5s
+      retries: 15
+      start_period: 15s
+    networks: [empleados-db]
+
+  # ------------------------------------------------------------------
+  # Base de datos - Departamentos
+  # ------------------------------------------------------------------
+  database-departamentos:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${DB_DEPARTAMENTOS_NAME:?Configure DB_DEPARTAMENTOS_NAME en .env}
+      POSTGRES_USER: ${DB_DEPARTAMENTOS_USER:?Configure DB_DEPARTAMENTOS_USER en .env}
+      POSTGRES_PASSWORD: ${DB_DEPARTAMENTOS_PASSWORD:?Configure DB_DEPARTAMENTOS_PASSWORD en .env}
+    volumes:
+      - vol-departamentos:/var/lib/postgresql/data
+      - ./departamentos/init.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", 'pg_isready -h 127.0.0.1 -U "$${POSTGRES_USER}" -d "$${POSTGRES_DB}" && PGPASSWORD="$${POSTGRES_PASSWORD}" psql -h 127.0.0.1 -U "$${POSTGRES_USER}" -d "$${POSTGRES_DB}" -tAc "SELECT id FROM departamentos LIMIT 1" >/dev/null']
+      interval: 5s
+      timeout: 5s
+      retries: 15
+      start_period: 15s
+    networks: [departamentos-db]
+
+  # ------------------------------------------------------------------
+  # Departamentos - SIN ports:, solo expose: (no accesible desde el host)
+  # ------------------------------------------------------------------
+  departamentos-service:
+    build: ./departamentos
+    restart: unless-stopped
+    environment:
+      PORT: 8082
+      DB_HOST: database-departamentos
+      DB_PORT: 5432
+      DB_NAME: ${DB_DEPARTAMENTOS_NAME}
+      DB_USER: ${DB_DEPARTAMENTOS_USER}
+      DB_PASSWORD: ${DB_DEPARTAMENTOS_PASSWORD}
+    depends_on:
+      database-departamentos:
+        condition: service_healthy
+    expose:
+      - "8082"
+    networks: [microservices-network, departamentos-db]
+    healthcheck:
+      test: [CMD, node, -e, "fetch('http://127.0.0.1:8082/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 10s
+
+  # ------------------------------------------------------------------
+  # Empleados - SIN ports:, solo expose: (no accesible desde el host)
+  # ------------------------------------------------------------------
+  empleados-service:
+    build:
+      context: ..
+      dockerfile: Reto_3/empleados/Dockerfile
+    restart: unless-stopped
+    environment:
+      DB_HOST: database-empleados
+      DB_PORT: 5432
+      DB_NAME: ${DB_EMPLEADOS_NAME}
+      DB_USER: ${DB_EMPLEADOS_USER}
+      DB_PASSWORD: ${DB_EMPLEADOS_PASSWORD}
+      DEPARTAMENTOS_SERVICE_URL: ${DEPARTAMENTOS_SERVICE_URL:-http://departamentos-service:8082}
+      DEPARTAMENTOS_TIMEOUT_SECONDS: ${DEPARTAMENTOS_TIMEOUT_SECONDS:-2}
+      DEPARTAMENTOS_MAX_RETRIES: ${DEPARTAMENTOS_MAX_RETRIES:-3}
+      DEPARTAMENTOS_BACKOFF_SECONDS: ${DEPARTAMENTOS_BACKOFF_SECONDS:-1}
+      DEPARTAMENTOS_CB_FAIL_MAX: ${DEPARTAMENTOS_CB_FAIL_MAX:-3}
+      DEPARTAMENTOS_CB_RESET_TIMEOUT_SECONDS: ${DEPARTAMENTOS_CB_RESET_TIMEOUT_SECONDS:-30}
+    depends_on:
+      database-empleados:
+        condition: service_healthy
+      departamentos-service:
+        condition: service_healthy
+    expose:
+      - "8081"
+    networks: [microservices-network, empleados-db]
+    healthcheck:
+      test: [CMD, python, -c, "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8081/health', timeout=2)"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 10s
+
+  # ------------------------------------------------------------------
+  # API Gateway - EL ÚNICO servicio con ports: hacia el host
+  # ------------------------------------------------------------------
+  api-gateway:
+    build: ./api-gateway
+    restart: unless-stopped
+    environment:
+      EMPLEADOS_URL: http://empleados-service:8081
+      DEPARTAMENTOS_URL: http://departamentos-service:8082
+      GATEWAY_REQUEST_TIMEOUT_SECONDS: ${GATEWAY_REQUEST_TIMEOUT_SECONDS:-5}
+    depends_on:
+      empleados-service:
+        condition: service_healthy
+      departamentos-service:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:${GATEWAY_PORT:-8080}:8080"
+    networks: [microservices-network]
+    healthcheck:
+      test: [CMD, python, -c, "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/health', timeout=2)"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 10s
+
+networks:
+  microservices-network:
+    driver: bridge
+  empleados-db:
+    internal: true
+  departamentos-db:
+    internal: true
+
+volumes:
+  vol-empleados:
+  vol-departamentos:

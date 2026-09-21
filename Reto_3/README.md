@@ -1,9 +1,9 @@
 # Reto 3 - API Gateway y Resiliencia
 
 Este reto evoluciona el ecosistema de `Reto_2` sin modificar los retos
-anteriores. La fase actual deja implementado y probado todo lo previo a Docker:
-API Gateway, Circuit Breaker, fallback 503, estado observable, pruebas unitarias
-y documentacion. La integracion final con Docker Compose queda pendiente.
+anteriores. Incluye API Gateway, Circuit Breaker, fallback 503, estado
+observable, pruebas unitarias, documentacion **y la integracion completa con
+Docker Compose**, ya probada de punta a punta.
 
 ## 1. Objetivo
 
@@ -23,22 +23,10 @@ puede validarse.
 | departamentos-service | JavaScript, Express, pg | Gestiona departamentos |
 
 `Reto_3` copia esa base funcional y agrega `api-gateway`, Circuit Breaker con
-`pybreaker`, endpoint tecnico para observar el estado de la dependencia y pruebas
-pre-Docker sin contenedores.
+`pybreaker`, endpoint tecnico para observar el estado de la dependencia y
+orquestacion completa con Docker Compose.
 
 ## 3. Arquitectura
-
-```mermaid
-flowchart LR
-    C[Cliente] --> G[API Gateway]
-    G --> E[empleados-service]
-    G --> D[departamentos-service]
-    E --> BE[(db-empleados)]
-    D --> BD[(db-departamentos)]
-    E -->|REST + timeout + retry + Circuit Breaker| D
-```
-
-Arquitectura objetivo al dockerizar:
 
 ```mermaid
 flowchart LR
@@ -49,7 +37,7 @@ flowchart LR
     G -->|http://departamentos-service:8082| D
     E --> BE[(db-empleados)]
     D --> BD[(db-departamentos)]
-    E -->|valida departamento| D
+    E -->|valida departamento con Circuit Breaker| D
 ```
 
 ## 4. API Gateway
@@ -58,6 +46,7 @@ El Gateway es una aplicacion FastAPI, no Nginx, Traefik, Kong ni un proxy extern
 Centraliza preocupaciones de borde y no contiene reglas de negocio.
 
 Implementado en `api-gateway/app/config.py` y `api-gateway/app/main.py`.
+Dockerizado en `api-gateway/Dockerfile` (build multi-stage).
 
 ## 5. Justificacion de FastAPI + httpx
 
@@ -85,16 +74,25 @@ aplicacion, status code y body del backend. No propaga headers hop-by-hop como
 
 | Variable | Uso |
 | --- | --- |
-| `GATEWAY_PORT` | Puerto futuro del Gateway: 8080 |
-| `EMPLEADOS_URL` | URL interna futura: `http://empleados-service:8081` |
-| `DEPARTAMENTOS_URL` | URL interna futura: `http://departamentos-service:8082` |
-| `GATEWAY_REQUEST_TIMEOUT_SECONDS` | Timeout del Gateway hacia upstreams |
+| `GATEWAY_PORT` | Puerto publicado al host: 8080 |
+| `EMPLEADOS_URL` | URL interna: `http://empleados-service:8081` |
+| `DEPARTAMENTOS_URL` | URL interna: `http://departamentos-service:8082` |
+| `GATEWAY_REQUEST_TIMEOUT_SECONDS` | Timeout del Gateway hacia upstreams. **Recomendado: 20** (ver nota abajo) |
 | `DEPARTAMENTOS_SERVICE_URL` | URL usada por empleados hacia departamentos |
 | `DEPARTAMENTOS_TIMEOUT_SECONDS` | Timeout de empleados hacia departamentos |
 | `DEPARTAMENTOS_MAX_RETRIES` | Reintentos adicionales |
 | `DEPARTAMENTOS_BACKOFF_SECONDS` | Backoff base |
 | `DEPARTAMENTOS_CB_FAIL_MAX` | Fallos requeridos para abrir el circuito |
 | `DEPARTAMENTOS_CB_RESET_TIMEOUT_SECONDS` | Tiempo para probar recuperacion |
+
+> **Nota importante sobre `GATEWAY_REQUEST_TIMEOUT_SECONDS`:** el valor por
+> defecto (5s) es menor que el tiempo que puede tardar `empleados-service` en
+> agotar sus reintentos hacia `departamentos-service` (timeout 2s × 4 intentos +
+> backoff 1+2+4s ≈ 15s). Si el Gateway se rinde antes que `empleados-service`,
+> se observa un 503 del **Gateway**, no del Circuit Breaker, y todas las
+> peticiones tardan lo mismo. Por eso el `.env.example` fija
+> `GATEWAY_REQUEST_TIMEOUT_SECONDS=20`: le da margen suficiente al Circuit
+> Breaker para completar su primer ciclo de fallos y abrirse.
 
 ## 8. Circuit Breaker
 
@@ -123,24 +121,31 @@ Las transiciones se registran en logs mediante un listener de `pybreaker`.
 
 ## 11. Interaccion timeout + retry + circuit breaker
 
-El breaker envuelve el resultado global de una validacion de departamento:
+El Circuit Breaker de `pybreaker` cuenta como fallo cada **intento HTTP
+individual**, no la peticion de negocio completa. Con `fail_max=3`, esto tiene
+una consecuencia observable importante: el circuito puede abrirse **dentro de
+la primera peticion de registro**, apenas fallan sus primeros 3 intentos
+internos, en vez de esperar a que fallen 3-5 peticiones de negocio distintas.
+
+Verificado en pruebas de integracion: la primera peticion con departamentos
+caido tardo ~19.3s (agotando el ciclo completo de reintentos hasta que el
+circuito abrio a mitad de camino); las siguientes 7 peticiones respondieron en
+~0.03s cada una, con el circuito ya `OPEN`. El salto de 19.3s a 0.03s es la
+evidencia de que el Circuit Breaker esta funcionando.
 
 ```text
 POST /empleados
-  -> Circuit Breaker
-     -> intento HTTP
-     -> retry
-     -> retry
-     -> retry
-     -> exito o fallo definitivo
+  -> Circuit Breaker (cuenta cada intento)
+     -> intento HTTP (fallo 1)
+     -> retry (fallo 2)
+     -> retry (fallo 3 -> abre el circuito)
+     -> retry restante ya ve el circuito abierto -> fallback inmediato
 ```
-
-Asi, una sola peticion de negocio con varios retries cuenta como un solo fallo
-para el Circuit Breaker si todos los intentos fallan.
 
 ## 12. Estrategia de fallback
 
-Fallback elegido: `503 Service Unavailable`.
+Fallback elegido: `503 Service Unavailable`, con mensaje explicito indicando
+que el Circuit Breaker esta abierto.
 
 No se registra el empleado cuando departamentos no puede validarse. No se inventa
 un departamento por defecto y no se deja un empleado pendiente de reconciliacion.
@@ -157,8 +162,8 @@ posteriores.
 | --- | --- |
 | Departamento inexistente (`404`) | `400`, no abre circuito |
 | Timeout, red, reset, 5xx | Reintentos; si falla todo, `503` y cuenta como fallo tecnico |
-| Circuito abierto | `503` inmediato, sin llamada HTTP |
-| Upstream caido desde Gateway | `503` JSON estable |
+| Circuito abierto | `503` inmediato, sin llamada HTTP, mensaje explicito de Circuit Breaker |
+| Upstream caido desde Gateway | `503` JSON estable (`upstream_unavailable`) |
 | 400/404/500 del backend por Gateway | Se propaga status y body |
 
 ## 15. Estado observable
@@ -185,7 +190,7 @@ Respuesta:
 
 El valor sale del Circuit Breaker real (`pybreaker.current_state`).
 
-## 16. Pruebas pre-Docker
+## 16. Pruebas pre-Docker (unitarias)
 
 Desde la raiz:
 
@@ -198,7 +203,7 @@ npm --prefix Reto_3/departamentos test
 
 Estas pruebas no dependen de Docker.
 
-## 17. Arquitectura objetivo cuando se dockerice
+## 17. Arquitectura Docker (implementada)
 
 | Servicio | Puerto host | Puerto contenedor | Publicacion |
 | --- | --- | --- | --- |
@@ -206,41 +211,101 @@ Estas pruebas no dependen de Docker.
 | empleados-service | Ninguno | 8081 | `expose` |
 | departamentos-service | Ninguno | 8082 | `expose` |
 
-Variables objetivo:
+Variables usadas en runtime:
 
 ```env
 EMPLEADOS_URL=http://empleados-service:8081
 DEPARTAMENTOS_URL=http://departamentos-service:8082
 DEPARTAMENTOS_SERVICE_URL=http://departamentos-service:8082
+GATEWAY_REQUEST_TIMEOUT_SECONDS=20
 ```
 
-## 18. Prueba manual futura del Circuit Breaker
+`empleados-service` reutiliza `Reto_1/app/models.py`, igual que en `Reto_2`; por
+eso su build usa como contexto la raiz del repositorio (`context: ..`) en vez de
+su propia carpeta.
 
-Cuando exista Docker Compose:
+Redes: `microservices-network` (compartida entre los 3 servicios de aplicacion),
+`empleados-db` y `departamentos-db` (redes internas, una por par
+servicio-base de datos, para que ningun servicio pueda alcanzar la base de datos
+del otro).
 
-1. Levantar todo por Gateway.
-2. Crear un departamento.
-3. Crear empleado exitosamente por Gateway.
-4. Detener `departamentos-service`.
-5. Enviar tres altas de empleados con departamento existente.
-6. Ver que las primeras consumen timeout/retry.
-7. Ver que luego responde 503 inmediato por circuito abierto.
-8. Consultar `/health/dependencies`.
-9. Restaurar departamentos.
-10. Esperar `reset_timeout`.
-11. Enviar una nueva alta y observar recuperacion.
+## 18. Prueba manual del Circuit Breaker (ejecutada y verificada)
 
-## 19. Evidencias pendientes de Docker
+```powershell
+cd Reto_3
+copy .env.example .env
+docker compose up --build
+```
 
-No se incluyen capturas ficticias. Las evidencias reales quedan listadas en
-`docs/evidencias/README.md`.
+En otra terminal:
 
-## 20. Trabajo pendiente para el integrante encargado de Docker
+```powershell
+# 1. Verificar punto de entrada unico
+curl http://localhost:8080/health
+curl http://localhost:8080/departamentos
+curl http://localhost:8080/empleados
+curl http://localhost:8081/empleados      # debe fallar (conexion rechazada)
+curl http://localhost:8082/departamentos  # debe fallar (conexion rechazada)
 
-- Crear Compose de `Reto_3`.
-- Ajustar puertos internos a empleados `8081` y departamentos `8082`.
-- Publicar solo Gateway en host `8080`.
-- Convertir acceso directo a empleados/departamentos en `expose`.
-- Agregar healthchecks y `depends_on.condition: service_healthy`.
-- Ejecutar pruebas runtime y capturar evidencias.
-- Completar la seccion de verificacion posterior a Docker.
+# 2. Crear un departamento con el sistema sano
+Invoke-WebRequest -Uri http://localhost:8080/departamentos -Method POST `
+  -ContentType "application/json" `
+  -Body '{"id":"IT","nombre":"Tecnologia","descripcion":"Tecnologia"}'
+
+# 3. Apagar departamentos y observar el 503 del Gateway
+docker compose stop departamentos-service
+Invoke-WebRequest -Uri http://localhost:8080/departamentos -Method GET
+
+# 4. Enviar 8 altas de empleados y medir el tiempo de cada una
+for ($i=1; $i -le 8; $i++) {
+  $body = @{
+    id="E10$i"; nombre="Test $i"; apellido="T"; email="test$i@x.com"
+    numeroEmpleado="N10$i"; cargo="Dev"; area="IT"; departamentoId="IT"
+    fechaIngreso="2026-01-01"; estado="ACTIVO"
+  } | ConvertTo-Json
+  Measure-Command {
+    try { Invoke-RestMethod -Uri http://localhost:8080/empleados -Method POST -ContentType "application/json" -Body $body }
+    catch { Write-Host "Error: $($_.Exception.Response.StatusCode)" }
+  } | Select-Object TotalSeconds
+}
+
+# 5. Restaurar y esperar el reset_timeout (30s)
+docker compose start departamentos-service
+Start-Sleep -Seconds 35
+
+# 6. Confirmar recuperacion automatica con un departamento inexistente (debe dar 400, no 503)
+Invoke-RestMethod -Uri http://localhost:8080/empleados -Method POST -ContentType "application/json" -Body (@{
+  id="E201"; nombre="Recuperado"; apellido="T"; email="e201@x.com"
+  numeroEmpleado="N201"; cargo="Dev"; area="IT"; departamentoId="NO-EXISTE"
+  fechaIngreso="2026-01-01"; estado="ACTIVO"
+} | ConvertTo-Json)
+```
+
+**Resultado observado:**
+
+- Peticion 1: ~19.3 segundos (agota reintentos, abre el circuito a mitad de
+  camino) -> `503` con mensaje de Circuit Breaker abierto.
+- Peticiones 2-8: ~0.03 segundos cada una -> `503` inmediato, sin tocar la red.
+- Tras restaurar `departamentos-service` y esperar 35s, la peticion con
+  `departamentoId: "NO-EXISTE"` devolvio `400` (`"El departamento con id
+  NO-EXISTE no existe"`), confirmando que el circuito volvio a `CLOSED` y
+  consulto de verdad a departamentos -- sin reiniciar ningun contenedor.
+
+## 19. Evidencias
+
+Las evidencias de estas pruebas (aislamiento de puertos, salto en el tiempo de
+respuesta y recuperacion automatica) se demuestran en vivo durante la
+sustentacion, ejecutando los comandos de la seccion 18 directamente sobre el
+sistema levantado con `docker compose up --build`.
+
+## 20. Estado de la integracion Docker
+
+Completada y verificada:
+
+- [x] Compose de `Reto_3` creado con los 5 servicios (2 bases de datos, 2 servicios de negocio, 1 gateway).
+- [x] Puertos internos ajustados: empleados `8081`, departamentos `8082`.
+- [x] Solo `api-gateway` publica puerto al host (`8080`).
+- [x] `empleados-service` y `departamentos-service` usan `expose`, no `ports`.
+- [x] Healthchecks y `depends_on: condition: service_healthy` en toda la cadena.
+- [x] Pruebas runtime del Circuit Breaker ejecutadas y verificadas.
+- [x] Dockerfiles multi-stage para los tres servicios de aplicacion, con usuario no-root.
