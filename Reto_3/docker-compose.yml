@@ -112,7 +112,7 @@ services:
     environment:
       EMPLEADOS_URL: http://empleados-service:8081
       DEPARTAMENTOS_URL: http://departamentos-service:8082
-      GATEWAY_REQUEST_TIMEOUT_SECONDS: ${GATEWAY_REQUEST_TIMEOUT_SECONDS:-5}
+      GATEWAY_REQUEST_TIMEOUT_SECONDS: ${GATEWAY_REQUEST_TIMEOUT_SECONDS:-20}
     depends_on:
       empleados-service:
         condition: service_healthy

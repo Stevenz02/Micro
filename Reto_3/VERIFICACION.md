@@ -1,6 +1,9 @@
 # Verificacion Reto 3
 
-## A. Verificacion realizable ahora
+Este documento separa las pruebas unitarias sin Docker y la verificacion runtime
+con Docker Compose. En el estado actual ambas partes estan implementadas.
+
+## A. Verificacion unitaria sin Docker
 
 Instalar dependencias Python:
 
@@ -87,7 +90,7 @@ Chequeo de sintaxis Python:
 .\.venv\Scripts\python.exe -m compileall -q Reto_3
 ```
 
-## Cobertura pre-Docker
+## Cobertura unitaria
 
 | Criterio | Estado | Prueba |
 | --- | --- | --- |
@@ -105,47 +108,92 @@ Chequeo de sintaxis Python:
 | Departamento existente OK | CUMPLE | `test_circuito_inicia...` |
 | Departamento inexistente 400 | CUMPLE | `test_departamento_inexistente...` |
 | Fallos tecnicos contabilizados | CUMPLE | `test_despues_de_tres_fallos...` |
-| OPEN tras 3 fallos | CUMPLE | `test_despues_de_tres_fallos...` |
+| OPEN tras fallos | CUMPLE | `test_despues_de_tres_fallos...` |
 | OPEN no llama HTTP | CUMPLE | `test_despues_de_tres_fallos...` |
 | HALF_OPEN -> CLOSED | CUMPLE | `test_half_open_exitoso...` |
 | HALF_OPEN -> OPEN | CUMPLE | `test_half_open_fallido...` |
 | 404 no abre circuito | CUMPLE | `test_departamento_inexistente...` |
 
-## B. Verificacion posterior a Docker
+## B. Verificacion con Docker Compose
 
-Estos casos quedan documentados, pero no ejecutados en esta fase:
-
-```text
-Gateway accesible por localhost:8080
-acceso directo a empleados rechazado
-acceso directo a departamentos rechazado
-apagar departamentos
-probar error 503 del Gateway
-provocar apertura del Circuit Breaker
-observar diferencia de tiempos
-restaurar departamentos
-esperar reset timeout
-probar HALF_OPEN
-comprobar recuperacion automatica
-```
-
-Comandos esperados cuando exista Compose:
+Preparar variables y levantar:
 
 ```powershell
+Set-Location D:\Repositorios_UQ\Micro\Reto_3
+Copy-Item .env.example .env
 docker compose up -d --build --wait --wait-timeout 180
 docker compose ps
-Invoke-RestMethod http://localhost:8080/health
-Invoke-RestMethod http://localhost:8080/empleados
-Invoke-RestMethod http://localhost:8080/departamentos
-Invoke-RestMethod http://localhost:8080/health/dependencies
 ```
 
-Para la prueba de resiliencia:
+Verificar punto unico de entrada:
 
 ```powershell
-docker compose pause departamentos-service
-# Enviar altas de empleados por Gateway hasta abrir circuito.
-Invoke-RestMethod http://localhost:8080/health/dependencies
-docker compose unpause departamentos-service
-# Esperar DEPARTAMENTOS_CB_RESET_TIMEOUT_SECONDS y validar recuperacion.
+curl http://localhost:8080/health
+curl http://localhost:8080/departamentos
+curl http://localhost:8080/empleados
+curl http://localhost:8081/empleados
+curl http://localhost:8082/departamentos
 ```
+
+Resultado esperado:
+
+```text
+localhost:8080 responde por Gateway.
+localhost:8081 falla por conexion rechazada.
+localhost:8082 falla por conexion rechazada.
+```
+
+Crear departamento por Gateway:
+
+```powershell
+Invoke-WebRequest -Uri http://localhost:8080/departamentos -Method POST `
+  -ContentType "application/json" `
+  -Body '{"id":"IT","nombre":"Tecnologia","descripcion":"Tecnologia"}'
+```
+
+Probar apertura del Circuit Breaker:
+
+```powershell
+docker compose stop departamentos-service
+
+for ($i=1; $i -le 8; $i++) {
+  $body = @{
+    id="E10$i"; nombre="Test $i"; apellido="T"; email="test$i@x.com"
+    numeroEmpleado="N10$i"; cargo="Dev"; area="IT"; departamentoId="IT"
+    fechaIngreso="2026-01-01"; estado="ACTIVO"
+  } | ConvertTo-Json
+  Measure-Command {
+    try { Invoke-RestMethod -Uri http://localhost:8080/empleados -Method POST -ContentType "application/json" -Body $body }
+    catch { Write-Host "Error: $($_.Exception.Response.StatusCode)" }
+  } | Select-Object TotalSeconds
+}
+```
+
+Resultado observado y documentado en `README.md`:
+
+```text
+Peticion 1: ~19.3 segundos, agotando reintentos.
+Peticiones 2-8: ~0.03 segundos, fallback inmediato por circuito OPEN.
+```
+
+Probar recuperacion automatica:
+
+```powershell
+docker compose start departamentos-service
+Start-Sleep -Seconds 35
+
+Invoke-RestMethod -Uri http://localhost:8080/empleados -Method POST -ContentType "application/json" -Body (@{
+  id="E201"; nombre="Recuperado"; apellido="T"; email="e201@x.com"
+  numeroEmpleado="N201"; cargo="Dev"; area="IT"; departamentoId="NO-EXISTE"
+  fechaIngreso="2026-01-01"; estado="ACTIVO"
+} | ConvertTo-Json)
+```
+
+Resultado esperado:
+
+```text
+400: El departamento con id NO-EXISTE no existe
+```
+
+Ese 400 confirma que el Circuit Breaker dejo de crear pendientes por fallback,
+paso por HALF_OPEN y volvio a CLOSED consultando realmente a departamentos.

@@ -29,4 +29,5 @@ npm --prefix Reto_3/departamentos ci
 npm --prefix Reto_3/departamentos test
 ```
 
-Docker y publicacion de puertos quedan pendientes para la fase final de `Reto_3`.
+En Docker Compose este servicio usa `expose: 8082`, no `ports`, para que solo sea
+accesible dentro de la red interna y a traves del API Gateway.

@@ -9,7 +9,7 @@ Configurar upstreams locales o mockeados mediante variables:
 ```powershell
 $env:EMPLEADOS_URL='http://127.0.0.1:8081'
 $env:DEPARTAMENTOS_URL='http://127.0.0.1:8082'
-$env:GATEWAY_REQUEST_TIMEOUT_SECONDS='5'
+$env:GATEWAY_REQUEST_TIMEOUT_SECONDS='20'
 uvicorn app.main:app --host 127.0.0.1 --port 8080
 ```
 

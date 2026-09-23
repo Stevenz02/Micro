@@ -74,12 +74,21 @@ def test_orden_unicidad_antes_de_http(api, email, numero, expected):
     repo.crear.assert_not_called()
 
 
-@pytest.mark.parametrize("code", [400, 503])
-def test_no_persistir_sin_departamento_validado(api, code):
+def test_no_persistir_con_departamento_inexistente(api):
     client, repo, departments = api
-    departments.validar.side_effect = HTTPException(code, "No validado")
-    assert client.post("/empleados", json=EMPLEADO_EJEMPLO).status_code == code
+    departments.validar.side_effect = HTTPException(400, "No validado")
+    assert client.post("/empleados", json=EMPLEADO_EJEMPLO).status_code == 400
     repo.crear.assert_not_called()
+
+
+def test_fallo_tecnico_de_departamentos_crea_empleado_pendiente(api):
+    client, repo, departments = api
+    departments.validar.side_effect = HTTPException(503, "Circuito abierto")
+    response = client.post("/empleados", json=EMPLEADO_EJEMPLO)
+    assert response.status_code == 202
+    assert response.json()["estado"] == "PENDIENTE"
+    creado = repo.crear.call_args.args[0]
+    assert creado.estado == "PENDIENTE"
 
 
 @pytest.mark.parametrize(

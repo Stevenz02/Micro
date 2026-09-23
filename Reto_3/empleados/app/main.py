@@ -24,7 +24,7 @@ ERRORS = {
     400: {"model": Error, "description": "Email, numero o id duplicado; departamento inexistente"},
     404: {"model": Error, "description": "Recurso no encontrado"},
     500: {"model": Error, "description": "Error interno de persistencia"},
-    503: {"model": Error, "description": "Dependencia no disponible; no se registra el empleado"},
+    503: {"model": Error, "description": "Base de datos no disponible"},
 }
 
 
@@ -73,21 +73,7 @@ def create_app(repository=None, departamentos=None):
     def dependencies():
         return {"status": "ok", "dependencies": [app.state.departamentos.estado()]}
 
-    @app.post(
-        "/empleados",
-        response_model=Empleado,
-        status_code=201,
-        tags=["Empleados"],
-        responses=ERRORS,
-        summary="Registrar empleado activo",
-    )
-    def registrar(empleado: Empleado):
-        repo = app.state.repository
-        if repo.existe_email(empleado.email):
-            raise HTTPException(400, f"El email {empleado.email} ya esta registrado")
-        if repo.existe_numero(empleado.numeroEmpleado):
-            raise HTTPException(400, f"El numero de empleado {empleado.numeroEmpleado} ya esta registrado")
-        app.state.departamentos.validar(empleado.departamentoId)
+    def crear_empleado(repo, empleado):
         try:
             return repo.crear(empleado)
         except psycopg.errors.UniqueViolation as exc:
@@ -97,6 +83,36 @@ def create_app(repository=None, departamentos=None):
                 "empleados_pkey": "id",
             }.get(exc.diag.constraint_name, "identificador unico")
             raise HTTPException(400, f"El {field} ya esta registrado") from exc
+
+    @app.post(
+        "/empleados",
+        response_model=Empleado,
+        status_code=201,
+        tags=["Empleados"],
+        responses={
+            **ERRORS,
+            202: {
+                "model": Empleado,
+                "description": "Empleado recibido en estado PENDIENTE por dependencia no disponible",
+            },
+        },
+        summary="Registrar empleado activo o pendiente",
+    )
+    def registrar(empleado: Empleado):
+        repo = app.state.repository
+        if repo.existe_email(empleado.email):
+            raise HTTPException(400, f"El email {empleado.email} ya esta registrado")
+        if repo.existe_numero(empleado.numeroEmpleado):
+            raise HTTPException(400, f"El numero de empleado {empleado.numeroEmpleado} ya esta registrado")
+        try:
+            app.state.departamentos.validar(empleado.departamentoId)
+        except HTTPException as exc:
+            if exc.status_code != 503:
+                raise
+            pendiente = empleado.model_copy(update={"estado": "PENDIENTE"})
+            creado = crear_empleado(repo, pendiente)
+            return JSONResponse(status_code=202, content=creado.model_dump(mode="json"))
+        return crear_empleado(repo, empleado.model_copy(update={"estado": "ACTIVO"}))
 
     @app.get(
         "/empleados",
