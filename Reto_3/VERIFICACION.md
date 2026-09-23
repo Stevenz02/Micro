@@ -27,7 +27,7 @@ Ejecutar pruebas Gateway y empleados:
 Resultado obtenido:
 
 ```text
-39 passed, 8 warnings in 0.75s
+42 passed, 8 warnings in 0.90s
 ```
 
 Ejecutar pruebas departamentos:
@@ -113,6 +113,10 @@ Chequeo de sintaxis Python:
 | HALF_OPEN -> CLOSED | CUMPLE | `test_half_open_exitoso...` |
 | HALF_OPEN -> OPEN | CUMPLE | `test_half_open_fallido...` |
 | 404 no abre circuito | CUMPLE | `test_departamento_inexistente...` |
+| Falla tecnica crea pendiente | CUMPLE | `test_fallo_tecnico_de_departamentos_crea_empleado_pendiente` |
+| Pendiente confirmado existente pasa a ACTIVO | CUMPLE | `test_reconciliacion_activa_pendiente_si_departamento_existe` |
+| Pendiente confirmado inexistente pasa a RECHAZADO | CUMPLE | `test_reconciliacion_rechaza_pendiente_si_departamento_no_existe` |
+| Dependencia caida conserva PENDIENTE | CUMPLE | `test_reconciliacion_con_dependencia_caida_conserva_pendiente` |
 
 ## B. Verificacion con Docker Compose
 

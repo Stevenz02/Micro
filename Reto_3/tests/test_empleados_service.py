@@ -12,7 +12,7 @@ from fastapi.testclient import TestClient
 from Reto_1.app.models import EMPLEADO_EJEMPLO, Empleado as Original
 from Reto_3.empleados.app.config import Settings
 from Reto_3.empleados.app.departamentos import DepartamentosClient
-from Reto_3.empleados.app.main import create_app
+from Reto_3.empleados.app.main import create_app, reconciliar_pendientes
 from Reto_3.empleados.app.models import Empleado
 
 
@@ -89,6 +89,45 @@ def test_fallo_tecnico_de_departamentos_crea_empleado_pendiente(api):
     assert response.json()["estado"] == "PENDIENTE"
     creado = repo.crear.call_args.args[0]
     assert creado.estado == "PENDIENTE"
+
+
+def empleado_pendiente(**changes):
+    return Empleado(**{**EMPLEADO_EJEMPLO, "estado": "PENDIENTE", **changes})
+
+
+def test_reconciliacion_activa_pendiente_si_departamento_existe():
+    repo = Mock()
+    empleado = empleado_pendiente(id="P001", email="p001@example.com", numeroEmpleado="P001")
+    repo.listar_pendientes.return_value = [empleado]
+    departments = Mock()
+    resultado = reconciliar_pendientes(repo, departments)
+    departments.validar.assert_called_once_with("IT")
+    repo.actualizar_estado.assert_called_once_with("P001", "ACTIVO")
+    assert resultado == {"activados": 1, "rechazados": 0, "pendientes": 0}
+
+
+def test_reconciliacion_rechaza_pendiente_si_departamento_no_existe():
+    repo = Mock()
+    empleado = empleado_pendiente(id="P002", email="p002@example.com", numeroEmpleado="P002")
+    repo.listar_pendientes.return_value = [empleado]
+    departments = Mock()
+    departments.validar.side_effect = HTTPException(400, "Departamento no existe")
+    resultado = reconciliar_pendientes(repo, departments)
+    departments.validar.assert_called_once_with("IT")
+    repo.actualizar_estado.assert_called_once_with("P002", "RECHAZADO")
+    assert resultado == {"activados": 0, "rechazados": 1, "pendientes": 0}
+
+
+def test_reconciliacion_con_dependencia_caida_conserva_pendiente():
+    repo = Mock()
+    empleado = empleado_pendiente(id="P003", email="p003@example.com", numeroEmpleado="P003")
+    repo.listar_pendientes.return_value = [empleado]
+    departments = Mock()
+    departments.validar.side_effect = HTTPException(503, "Circuito abierto")
+    resultado = reconciliar_pendientes(repo, departments)
+    departments.validar.assert_called_once_with("IT")
+    repo.actualizar_estado.assert_not_called()
+    assert resultado == {"activados": 0, "rechazados": 0, "pendientes": 1}
 
 
 @pytest.mark.parametrize(

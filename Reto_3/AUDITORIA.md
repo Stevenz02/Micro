@@ -25,6 +25,7 @@ aislamiento de puertos y evidencia runtime documentada para sustentacion.
 | HALF_OPEN | CUMPLE | Prueba tras reset timeout | `empleados/app/departamentos.py` | `test_half_open_*` | Recuperacion automatica |
 | 404 no abre circuito | CUMPLE | `HTTPException(400)` excluido | `empleados/app/departamentos.py` | `test_departamento_inexistente...` | Mantiene semantica de negocio |
 | Creacion pendiente ante falla tecnica | CUMPLE | Registra empleado con `estado=PENDIENTE` y responde `202` | `empleados/app/main.py`, `empleados/app/repository.py`, `empleados/init.sql` | `test_fallo_tecnico_de_departamentos_crea_empleado_pendiente` | No marca ACTIVO sin validar |
+| Reconciliacion de pendientes | CUMPLE | Tarea `asyncio.create_task` revisa pendientes y actualiza a `ACTIVO` o `RECHAZADO` | `empleados/app/main.py`, `empleados/app/repository.py` | `test_reconciliacion_*` | Si departamentos sigue caido conserva `PENDIENTE` |
 | Estado observable | CUMPLE | `/health/dependencies` | `empleados/app/main.py` | `test_estado_observable...` | Proviene de `current_state` |
 | Compose de Reto 3 | CUMPLE | 5 servicios | `docker-compose.yml` | `docker compose up --build` | 2 BD, 2 servicios, 1 Gateway |
 | Gateway publicado en host 8080 | CUMPLE | `ports` solo en Gateway | `docker-compose.yml` | `curl localhost:8080/health` | Punto unico de entrada |
@@ -33,8 +34,8 @@ aislamiento de puertos y evidencia runtime documentada para sustentacion.
 | Network wiring final | CUMPLE | Red compartida + redes internas de BD | `docker-compose.yml` | Revision Compose | Mantiene BD independientes |
 | Healthchecks Docker | CUMPLE | Healthchecks y `depends_on.condition: service_healthy` | `docker-compose.yml` | `docker compose ps` | Arranque ordenado |
 | Dockerfiles | CUMPLE | Dockerfiles para 3 apps | `api-gateway/Dockerfile`, `empleados/Dockerfile`, `departamentos/Dockerfile` | Build Compose | Multi-stage y usuario no-root |
-| Pruebas Gateway sin Docker | CUMPLE | MockTransport | `tests/test_gateway.py` | `39 passed` | Cubre errores y headers |
-| Pruebas empleados sin Docker | CUMPLE | TestClient + MockTransport | `tests/test_empleados_service.py` | `39 passed` | Cubre breaker/retry/fallback |
+| Pruebas Gateway sin Docker | CUMPLE | MockTransport | `tests/test_gateway.py` | `42 passed` | Cubre errores y headers |
+| Pruebas empleados sin Docker | CUMPLE | TestClient + MockTransport | `tests/test_empleados_service.py` | `42 passed` | Cubre breaker/retry/fallback/reconciliacion |
 | Departamentos heredado | CUMPLE | Copia funcional | `departamentos/` | `npm test` | 12 pruebas pasan |
 | Documentacion principal | CUMPLE | README completo | `README.md` | Revision documental | Incluye demo runtime |
 | README por servicio | CUMPLE | Gateway, empleados, departamentos | `*/README.md` | Revision documental | Coherente con Reto 3 |

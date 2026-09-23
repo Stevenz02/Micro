@@ -21,6 +21,12 @@ Cuando la dependencia no responde, empleados registra la solicitud con
 el empleado como `ACTIVO` sin validar. Con el circuito abierto, las siguientes
 solicitudes quedan pendientes rapidamente, sin volver a golpear la red.
 
+Ademas, `app/main.py` arranca un reconciliador con `asyncio.create_task`. El
+reconciliador busca empleados `PENDIENTE`, vuelve a validar el departamento con
+el mismo cliente REST y actualiza el estado: `ACTIVO` si existe, `RECHAZADO` si
+departamentos confirma 404, o conserva `PENDIENTE` si la dependencia sigue
+caida.
+
 ## Estado observable
 
 ```http
@@ -51,6 +57,7 @@ Ejemplo:
 | `DEPARTAMENTOS_BACKOFF_SECONDS` | `1` |
 | `DEPARTAMENTOS_CB_FAIL_MAX` | `3` |
 | `DEPARTAMENTOS_CB_RESET_TIMEOUT_SECONDS` | `30` |
+| `PENDIENTES_RECONCILIATION_INTERVAL_SECONDS` | `15` |
 
 ## Pruebas
 

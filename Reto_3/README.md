@@ -11,7 +11,9 @@ Agregar un punto unico de entrada para clientes y resiliencia en la comunicacion
 `empleados-service -> departamentos-service`.
 
 La regla de negocio del Reto 3 permite dejar la creacion en estado `PENDIENTE`
-si el departamento no puede validarse por una falla tecnica temporal.
+si el departamento no puede validarse por una falla tecnica temporal. Luego un
+reconciliador interno vuelve a consultar departamentos: si existe pasa a
+`ACTIVO`; si recibe un 404 real pasa a `RECHAZADO`.
 
 ## 2. Contexto heredado de Reto 2
 
@@ -84,6 +86,7 @@ aplicacion, status code y body del backend. No propaga headers hop-by-hop como
 | `DEPARTAMENTOS_BACKOFF_SECONDS` | Backoff base |
 | `DEPARTAMENTOS_CB_FAIL_MAX` | Fallos requeridos para abrir el circuito |
 | `DEPARTAMENTOS_CB_RESET_TIMEOUT_SECONDS` | Tiempo para probar recuperacion |
+| `PENDIENTES_RECONCILIATION_INTERVAL_SECONDS` | Cada cuanto se revisan empleados `PENDIENTE` |
 
 > **Nota importante sobre `GATEWAY_REQUEST_TIMEOUT_SECONDS`:** el valor por
 > defecto (5s) es menor que el tiempo que puede tardar `empleados-service` en
@@ -151,11 +154,17 @@ Si departamentos no puede validarse por timeout, error de red, 5xx o circuito
 abierto, el empleado se guarda como pendiente. No se inventa un departamento por
 defecto y tampoco se marca `ACTIVO` hasta que la validacion pueda resolverse.
 
+La reconciliacion corre con `asyncio.create_task` dentro de `empleados-service`.
+Cada ciclo busca empleados `PENDIENTE` y usa el mismo cliente REST con Circuit
+Breaker. Si departamentos confirma existencia, actualiza a `ACTIVO`; si responde
+404, actualiza a `RECHAZADO`; si sigue caido o el circuito esta abierto, conserva
+`PENDIENTE` para el siguiente ciclo.
+
 ## 13. Razon de priorizar consistencia
 
-RRHH no debe guardar empleados asociados a un departamento no validado. Esta
-decision evita estados intermedios y procesos asincronos que pertenecen a retos
-posteriores.
+RRHH no debe marcar como activo un empleado asociado a un departamento no
+validado. Por eso se usa un estado intermedio auditable (`PENDIENTE`) y una
+reconciliacion simple por sondeo, sin colas ni componentes adicionales.
 
 ## 14. Manejo de errores
 
@@ -164,6 +173,8 @@ posteriores.
 | Departamento inexistente (`404`) | `400`, no abre circuito |
 | Timeout, red, reset, 5xx | Reintentos; si falla todo, empleado `PENDIENTE` con `202` |
 | Circuito abierto | `202` inmediato, sin llamada HTTP, empleado `PENDIENTE` |
+| Reconciliacion confirma departamento existente | Empleado `PENDIENTE` pasa a `ACTIVO` |
+| Reconciliacion confirma departamento inexistente | Empleado `PENDIENTE` pasa a `RECHAZADO` |
 | Upstream caido desde Gateway | `503` JSON estable (`upstream_unavailable`) |
 | 400/404/500 del backend por Gateway | Se propaga status y body |
 

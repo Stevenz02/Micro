@@ -7,9 +7,9 @@ Docker, debe capturar:
 2. Acceso directo a departamentos rechazado desde el host.
 3. El mismo recurso funcionando via Gateway.
 4. Primeras solicitudes lentas mientras el Circuit Breaker esta `closed`.
-5. Respuesta 503 inmediata cuando el Circuit Breaker queda `open`.
+5. Respuesta 202 inmediata y empleado `PENDIENTE` cuando el Circuit Breaker queda `open`.
 6. Estado `open` observable en `/health/dependencies`.
 7. Restauracion de `departamentos-service`.
 8. Transicion de recuperacion tras el `reset_timeout`.
 9. Estado `closed` tras una llamada exitosa.
-10. Respuesta 400 para departamento inexistente luego de recuperarse.
+10. Reconciliacion de pendientes: `ACTIVO` si el departamento existe y `RECHAZADO` si el 404 queda confirmado.
