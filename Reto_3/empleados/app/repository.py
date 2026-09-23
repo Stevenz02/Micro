@@ -30,7 +30,7 @@ class Repository:
         self._execute("ALTER TABLE empleados DROP CONSTRAINT IF EXISTS empleados_estado_check")
         self._execute(
             "ALTER TABLE empleados ADD CONSTRAINT empleados_estado_check "
-            "CHECK (estado IN ('ACTIVO', 'PENDIENTE'))"
+            "CHECK (estado IN ('ACTIVO', 'PENDIENTE', 'RECHAZADO'))"
         )
         self._schema_ready = True
 
@@ -52,6 +52,24 @@ class Repository:
         return [Empleado(**row) for row in self._query(
             f"SELECT {COLUMNS} FROM empleados ORDER BY id", many=True
         )]
+
+    def listar_pendientes(self, limit=50):
+        self.ensure_schema()
+        return [
+            Empleado(**row) for row in self._query(
+                f"SELECT {COLUMNS} FROM empleados WHERE estado = 'PENDIENTE' ORDER BY id LIMIT %s",
+                (limit,),
+                many=True,
+            )
+        ]
+
+    def actualizar_estado(self, empleado_id, estado):
+        self.ensure_schema()
+        row = self._query(
+            f"UPDATE empleados SET estado = %s WHERE id = %s RETURNING {COLUMNS}",
+            (estado, empleado_id),
+        )
+        return Empleado(**row) if row else None
 
     def crear(self, empleado):
         self.ensure_schema()

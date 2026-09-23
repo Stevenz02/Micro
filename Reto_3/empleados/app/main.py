@@ -1,5 +1,6 @@
+import asyncio
 import logging
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
 
 import httpx
 import psycopg
@@ -28,6 +29,41 @@ ERRORS = {
 }
 
 
+def reconciliar_pendientes(repo, departamentos, limit=50):
+    """Revisa empleados PENDIENTE y actualiza solo con evidencia del servicio de departamentos."""
+    resultado = {"activados": 0, "rechazados": 0, "pendientes": 0}
+    for empleado in repo.listar_pendientes(limit):
+        try:
+            departamentos.validar(empleado.departamentoId)
+        except HTTPException as exc:
+            if exc.status_code == 400:
+                repo.actualizar_estado(empleado.id, "RECHAZADO")
+                resultado["rechazados"] += 1
+            else:
+                resultado["pendientes"] += 1
+        else:
+            repo.actualizar_estado(empleado.id, "ACTIVO")
+            resultado["activados"] += 1
+    return resultado
+
+
+async def reconciliar_periodicamente(app, intervalo):
+    while True:
+        await asyncio.sleep(intervalo)
+        try:
+            resultado = await asyncio.to_thread(
+                reconciliar_pendientes,
+                app.state.repository,
+                app.state.departamentos,
+            )
+            if any(resultado.values()):
+                logger.info("Reconciliacion de empleados pendientes: %s", resultado)
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.exception("No se pudo reconciliar empleados pendientes")
+
+
 def create_app(repository=None, departamentos=None):
     @asynccontextmanager
     async def lifespan(app):
@@ -40,7 +76,15 @@ def create_app(repository=None, departamentos=None):
             app.state.repository = Repository(database_config())
             with httpx.Client(follow_redirects=False, trust_env=False) as client:
                 app.state.departamentos = DepartamentosClient(settings, client)
-                yield
+                tarea_reconciliacion = asyncio.create_task(
+                    reconciliar_periodicamente(app, settings.reconciliation_interval)
+                )
+                try:
+                    yield
+                finally:
+                    tarea_reconciliacion.cancel()
+                    with suppress(asyncio.CancelledError):
+                        await tarea_reconciliacion
 
     app = FastAPI(
         title="Reto 3 - Empleados",
