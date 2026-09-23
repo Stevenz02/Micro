@@ -10,6 +10,6 @@ CREATE TABLE empleados (
     area            TEXT NOT NULL,
     departamento_id TEXT NOT NULL,
     fecha_ingreso   DATE NOT NULL,
-    estado          TEXT NOT NULL DEFAULT 'ACTIVO' CHECK (estado = 'ACTIVO')
+    estado          TEXT NOT NULL DEFAULT 'ACTIVO' CHECK (estado IN ('ACTIVO', 'PENDIENTE'))
 );
 -- No hay FK entre bases: departamentos se valida exclusivamente por HTTP.

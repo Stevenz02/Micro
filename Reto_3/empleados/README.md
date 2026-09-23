@@ -15,10 +15,11 @@ de departamentos. En `Reto_3` agrega Circuit Breaker con `pybreaker`.
 
 ## Circuit Breaker
 
-La llamada `empleados -> departamentos` conserva los reintentos de `Reto_2`, pero
-el breaker observa el resultado global de la validacion. Si todos los intentos
-fallan, se registra un fallo tecnico. Tras tres fallos se abre el circuito y las
-siguientes solicitudes reciben 503 inmediato sin llamada HTTP.
+La llamada `empleados -> departamentos` conserva los reintentos de `Reto_2`.
+Cuando la dependencia no responde, empleados registra la solicitud con
+`estado=PENDIENTE` y responde `202 Accepted`; no inventa departamentos ni marca
+el empleado como `ACTIVO` sin validar. Con el circuito abierto, las siguientes
+solicitudes quedan pendientes rapidamente, sin volver a golpear la red.
 
 ## Estado observable
 

@@ -43,12 +43,12 @@ class DepartamentosClient:
         except pybreaker.CircuitBreakerError as exc:
             raise HTTPException(
                 503,
-                "Departamentos no disponible por Circuit Breaker abierto; empleado no registrado",
+                "Departamentos no disponible por Circuit Breaker abierto; validacion aplazada",
             ) from exc
         except DepartamentosUnavailable as exc:
             raise HTTPException(
                 503,
-                "No se pudo validar el departamento; empleado no registrado. Intente mas tarde",
+                "No se pudo validar el departamento; validacion aplazada. Intente mas tarde",
             ) from exc
 
     def _validar_con_reintentos(self, departamento_id):

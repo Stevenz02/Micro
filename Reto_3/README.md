@@ -1,7 +1,7 @@
 # Reto 3 - API Gateway y Resiliencia
 
 Este reto evoluciona el ecosistema de `Reto_2` sin modificar los retos
-anteriores. Incluye API Gateway, Circuit Breaker, fallback 503, estado
+anteriores. Incluye API Gateway, Circuit Breaker, creacion pendiente, estado
 observable, pruebas unitarias, documentacion **y la integracion completa con
 Docker Compose**, ya probada de punta a punta.
 
@@ -10,8 +10,8 @@ Docker Compose**, ya probada de punta a punta.
 Agregar un punto unico de entrada para clientes y resiliencia en la comunicacion
 `empleados-service -> departamentos-service`.
 
-La regla de negocio se mantiene: no se registra un empleado si su departamento no
-puede validarse.
+La regla de negocio del Reto 3 permite dejar la creacion en estado `PENDIENTE`
+si el departamento no puede validarse por una falla tecnica temporal.
 
 ## 2. Contexto heredado de Reto 2
 
@@ -114,7 +114,7 @@ El Circuit Breaker esta en `empleados-service`, exactamente en la llamada
 | Estado | Comportamiento |
 | --- | --- |
 | `closed` | Se consulta departamentos normalmente |
-| `open` | No se intenta red; fallback inmediato 503 |
+| `open` | No se intenta red; la creacion queda `PENDIENTE` de inmediato |
 | `half-open` | Se permite una llamada de prueba tras el reset timeout |
 
 Las transiciones se registran en logs mediante un listener de `pybreaker`.
@@ -139,16 +139,17 @@ POST /empleados
      -> intento HTTP (fallo 1)
      -> retry (fallo 2)
      -> retry (fallo 3 -> abre el circuito)
-     -> retry restante ya ve el circuito abierto -> fallback inmediato
+     -> retry restante ya ve el circuito abierto -> creacion PENDIENTE inmediata
 ```
 
 ## 12. Estrategia de fallback
 
-Fallback elegido: `503 Service Unavailable`, con mensaje explicito indicando
-que el Circuit Breaker esta abierto.
+Fallback elegido: `202 Accepted` con el empleado persistido en
+`estado=PENDIENTE`.
 
-No se registra el empleado cuando departamentos no puede validarse. No se inventa
-un departamento por defecto y no se deja un empleado pendiente de reconciliacion.
+Si departamentos no puede validarse por timeout, error de red, 5xx o circuito
+abierto, el empleado se guarda como pendiente. No se inventa un departamento por
+defecto y tampoco se marca `ACTIVO` hasta que la validacion pueda resolverse.
 
 ## 13. Razon de priorizar consistencia
 
@@ -161,8 +162,8 @@ posteriores.
 | Caso | Respuesta |
 | --- | --- |
 | Departamento inexistente (`404`) | `400`, no abre circuito |
-| Timeout, red, reset, 5xx | Reintentos; si falla todo, `503` y cuenta como fallo tecnico |
-| Circuito abierto | `503` inmediato, sin llamada HTTP, mensaje explicito de Circuit Breaker |
+| Timeout, red, reset, 5xx | Reintentos; si falla todo, empleado `PENDIENTE` con `202` |
+| Circuito abierto | `202` inmediato, sin llamada HTTP, empleado `PENDIENTE` |
 | Upstream caido desde Gateway | `503` JSON estable (`upstream_unavailable`) |
 | 400/404/500 del backend por Gateway | Se propaga status y body |
 
@@ -252,7 +253,7 @@ Invoke-WebRequest -Uri http://localhost:8080/departamentos -Method POST `
   -ContentType "application/json" `
   -Body '{"id":"IT","nombre":"Tecnologia","descripcion":"Tecnologia"}'
 
-# 3. Apagar departamentos y observar el 503 del Gateway
+# 3. Apagar departamentos y observar 503 al consultar departamentos directamente por Gateway
 docker compose stop departamentos-service
 Invoke-WebRequest -Uri http://localhost:8080/departamentos -Method GET
 
@@ -273,7 +274,7 @@ for ($i=1; $i -le 8; $i++) {
 docker compose start departamentos-service
 Start-Sleep -Seconds 35
 
-# 6. Confirmar recuperacion automatica con un departamento inexistente (debe dar 400, no 503)
+# 6. Confirmar recuperacion automatica con un departamento inexistente (debe dar 400, no PENDIENTE)
 Invoke-RestMethod -Uri http://localhost:8080/empleados -Method POST -ContentType "application/json" -Body (@{
   id="E201"; nombre="Recuperado"; apellido="T"; email="e201@x.com"
   numeroEmpleado="N201"; cargo="Dev"; area="IT"; departamentoId="NO-EXISTE"
@@ -283,9 +284,10 @@ Invoke-RestMethod -Uri http://localhost:8080/empleados -Method POST -ContentType
 
 **Resultado observado:**
 
-- Peticion 1: ~19.3 segundos (agota reintentos, abre el circuito a mitad de
-  camino) -> `503` con mensaje de Circuit Breaker abierto.
-- Peticiones 2-8: ~0.03 segundos cada una -> `503` inmediato, sin tocar la red.
+- Peticion 1: ~19.3 segundos (agota reintentos y abre el circuito) -> `202`
+  con empleado guardado como `PENDIENTE`.
+- Peticiones 2-8: ~0.03 segundos cada una -> `202` inmediato, sin tocar la red,
+  con empleados guardados como `PENDIENTE`.
 - Tras restaurar `departamentos-service` y esperar 35s, la peticion con
   `departamentoId: "NO-EXISTE"` devolvio `400` (`"El departamento con id
   NO-EXISTE no existe"`), confirmando que el circuito volvio a `CLOSED` y

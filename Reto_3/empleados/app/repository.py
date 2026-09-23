@@ -12,6 +12,7 @@ COLUMNS = '''id, nombre, apellido, email, numero_empleado AS "numeroEmpleado",
 class Repository:
     def __init__(self, config):
         self.config = config
+        self._schema_ready = False
 
     def _query(self, statement, params=(), *, many=False):
         # El contexto confirma la transacción o hace rollback, y cierra la conexión.
@@ -19,7 +20,22 @@ class Repository:
             cursor = conn.execute(statement, params)
             return cursor.fetchall() if many else cursor.fetchone()
 
+    def _execute(self, statement, params=()):
+        with psycopg.connect(**self.config) as conn:
+            conn.execute(statement, params)
+
+    def ensure_schema(self):
+        if self._schema_ready:
+            return
+        self._execute("ALTER TABLE empleados DROP CONSTRAINT IF EXISTS empleados_estado_check")
+        self._execute(
+            "ALTER TABLE empleados ADD CONSTRAINT empleados_estado_check "
+            "CHECK (estado IN ('ACTIVO', 'PENDIENTE'))"
+        )
+        self._schema_ready = True
+
     def ready(self):
+        self.ensure_schema()
         self._query("SELECT id FROM empleados LIMIT 1")
 
     def existe_email(self, email):
@@ -38,6 +54,7 @@ class Repository:
         )]
 
     def crear(self, empleado):
+        self.ensure_schema()
         row = self._query(
             f'''INSERT INTO empleados
                 (id, nombre, apellido, email, numero_empleado, cargo, area,
@@ -46,6 +63,6 @@ class Repository:
                 RETURNING {COLUMNS}''',
             (empleado.id, empleado.nombre, empleado.apellido, empleado.email,
              empleado.numeroEmpleado, empleado.cargo, empleado.area,
-             empleado.departamentoId, empleado.fechaIngreso, "ACTIVO"),
+             empleado.departamentoId, empleado.fechaIngreso, empleado.estado),
         )
         return Empleado(**row)

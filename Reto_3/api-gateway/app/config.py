@@ -14,7 +14,7 @@ class Settings:
         settings = cls(
             empleados_url=os.getenv("EMPLEADOS_URL", "http://empleados-service:8081").rstrip("/"),
             departamentos_url=os.getenv("DEPARTAMENTOS_URL", "http://departamentos-service:8082").rstrip("/"),
-            timeout=float(os.getenv("GATEWAY_REQUEST_TIMEOUT_SECONDS", "5")),
+            timeout=float(os.getenv("GATEWAY_REQUEST_TIMEOUT_SECONDS", "20")),
         )
         for name, value in {
             "EMPLEADOS_URL": settings.empleados_url,
