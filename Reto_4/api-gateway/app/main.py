@@ -60,8 +60,8 @@ def create_app(settings: Settings | None = None, client: httpx.AsyncClient | Non
                 yield
 
     app = FastAPI(
-        title="Reto 3 - API Gateway",
-        version="3.0.0",
+        title="Reto 4 - API Gateway",
+        version="4.0.0",
         lifespan=lifespan,
         description="Punto unico de entrada para empleados y departamentos.",
     )
@@ -93,11 +93,7 @@ def create_app(settings: Settings | None = None, client: httpx.AsyncClient | Non
 
     @app.get("/health/dependencies", tags=["Salud"])
     async def dependencies(request: Request):
-        return await proxy(
-            request,
-            "empleados-service",
-            request.app.state.settings.empleados_url,
-        )
+        return await proxy(request, "empleados-service", request.app.state.settings.empleados_url)
 
     @app.api_route("/empleados", methods=METHODS, tags=["Proxy"])
     @app.api_route("/empleados/{path:path}", methods=METHODS, tags=["Proxy"])
@@ -108,6 +104,21 @@ def create_app(settings: Settings | None = None, client: httpx.AsyncClient | Non
     @app.api_route("/departamentos/{path:path}", methods=METHODS, tags=["Proxy"])
     async def departamentos(request: Request):
         return await proxy(request, "departamentos-service", request.app.state.settings.departamentos_url)
+
+    @app.api_route("/perfiles", methods=METHODS, tags=["Proxy"])
+    @app.api_route("/perfiles/{path:path}", methods=METHODS, tags=["Proxy"])
+    async def perfiles(request: Request):
+        return await proxy(request, "perfiles-service", request.app.state.settings.perfiles_url)
+
+    @app.api_route("/notificaciones", methods=METHODS, tags=["Proxy"])
+    @app.api_route("/notificaciones/{path:path}", methods=METHODS, tags=["Proxy"])
+    async def notificaciones(request: Request):
+        return await proxy(request, "notificaciones-service", request.app.state.settings.notificaciones_url)
+
+    @app.api_route("/vacaciones", methods=METHODS, tags=["Proxy"])
+    @app.api_route("/vacaciones/{path:path}", methods=METHODS, tags=["Proxy"])
+    async def vacaciones(request: Request):
+        return await proxy(request, "vacaciones-service", request.app.state.settings.vacaciones_url)
 
     return app
 
