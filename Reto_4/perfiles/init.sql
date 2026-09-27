@@ -1,0 +1,17 @@
+CREATE TABLE perfiles (
+    id UUID PRIMARY KEY,
+    empleado_id TEXT NOT NULL UNIQUE,
+    nombre TEXT NOT NULL,
+    email TEXT NOT NULL,
+    telefono TEXT NOT NULL DEFAULT '',
+    direccion TEXT NOT NULL DEFAULT '',
+    ciudad TEXT NOT NULL DEFAULT '',
+    biografia TEXT NOT NULL DEFAULT '',
+    fecha_creacion TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    archivado BOOLEAN NOT NULL DEFAULT FALSE
+);
+
+CREATE TABLE eventos_procesados (
+    id UUID PRIMARY KEY,
+    procesado_en TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+);

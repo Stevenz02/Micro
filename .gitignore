@@ -12,6 +12,8 @@ node_modules/
 target/
 dist/
 build/
+**/bin/
+**/obj/
 *.log
 *.egg-info/
 .coverage

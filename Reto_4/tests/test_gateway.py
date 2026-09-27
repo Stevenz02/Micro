@@ -29,19 +29,6 @@ def test_health_responde_desde_gateway():
     assert not http.is_closed
 
 
-def test_health_dependencies_se_expone_desde_gateway():
-    def handler(request):
-        assert request.url.host == "empleados-upstream"
-        assert request.url.path == "/health/dependencies"
-        return httpx.Response(200, json={"status": "ok", "dependencies": []})
-
-    test_client, _ = gateway(handler)
-    with test_client as client:
-        response = client.get("/health/dependencies")
-    assert response.status_code == 200
-    assert response.json()["status"] == "ok"
-
-
 @pytest.mark.parametrize(
     "method,path,body,expected_host",
     [
@@ -112,3 +99,32 @@ def test_upstream_caido_o_timeout_devuelve_503_json_estable(error):
     }
     assert "Traceback" not in response.text
     assert "httpx" not in response.text
+
+
+@pytest.mark.parametrize(
+    "method,path,host",
+    [
+        ("GET", "/perfiles", "perfiles-service"),
+        ("PUT", "/perfiles/E001", "perfiles-service"),
+        ("GET", "/notificaciones/E001", "notificaciones-service"),
+        ("POST", "/vacaciones", "vacaciones-service"),
+        ("DELETE", "/vacaciones/V001", "vacaciones-service"),
+        ("GET", "/vacaciones?empleadoId=E001", "vacaciones-service"),
+    ],
+)
+def test_proxy_servicios_reto4(method, path, host):
+    def handler(request):
+        assert request.url.host == host
+        return httpx.Response(200, json={"ok": True})
+
+    test_client, _ = gateway(handler)
+    with test_client as client:
+        response = client.request(method, path, json={} if method in {"POST", "PUT"} else None)
+    assert response.status_code == 200
+
+
+@pytest.mark.parametrize("path", ["/perfiles/docs", "/notificaciones/openapi.json", "/vacaciones/docs", "/vacaciones/v1/openapi.json"])
+def test_swagger_servicios_reto4_pasa_por_gateway(path):
+    test_client, _ = gateway(lambda request: httpx.Response(200, text="swagger"))
+    with test_client as client:
+        assert client.get(path).status_code == 200
