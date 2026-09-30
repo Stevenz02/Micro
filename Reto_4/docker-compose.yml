@@ -88,6 +88,9 @@ services:
       DEPARTAMENTOS_CB_FAIL_MAX: ${DEPARTAMENTOS_CB_FAIL_MAX:-3}
       DEPARTAMENTOS_CB_RESET_TIMEOUT_SECONDS: ${DEPARTAMENTOS_CB_RESET_TIMEOUT_SECONDS:-30}
       PENDIENTES_RECONCILIATION_INTERVAL_SECONDS: ${PENDIENTES_RECONCILIATION_INTERVAL_SECONDS:-15}
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_USER: ${RABBITMQ_USER}
+      RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD}
     depends_on: { database-empleados: { condition: service_healthy }, departamentos-service: { condition: service_healthy }, rabbitmq-setup: { condition: service_completed_successfully } }
     expose: ["8081"]
     networks: [microservices-network, empleados-db]
@@ -96,7 +99,7 @@ services:
   perfiles-service:
     build: ./perfiles
     restart: unless-stopped
-    environment: { DB_HOST: database-perfiles, DB_PORT: 5432, DB_NAME: "${DB_PERFILES_NAME}", DB_USER: "${DB_PERFILES_USER}", DB_PASSWORD: "${DB_PERFILES_PASSWORD}" }
+    environment: { DB_HOST: database-perfiles, DB_PORT: 5432, DB_NAME: "${DB_PERFILES_NAME}", DB_USER: "${DB_PERFILES_USER}", DB_PASSWORD: "${DB_PERFILES_PASSWORD}", RABBITMQ_HOST: rabbitmq, RABBITMQ_USER: "${RABBITMQ_USER}", RABBITMQ_PASSWORD: "${RABBITMQ_PASSWORD}" }
     depends_on: { database-perfiles: { condition: service_healthy }, rabbitmq-setup: { condition: service_completed_successfully } }
     expose: ["8083"]
     networks: [microservices-network, perfiles-db]
@@ -105,7 +108,7 @@ services:
   notificaciones-service:
     build: ./notificaciones
     restart: unless-stopped
-    environment: { DB_HOST: database-notificaciones, DB_PORT: 5432, DB_NAME: "${DB_NOTIFICACIONES_NAME}", DB_USER: "${DB_NOTIFICACIONES_USER}", DB_PASSWORD: "${DB_NOTIFICACIONES_PASSWORD}" }
+    environment: { DB_HOST: database-notificaciones, DB_PORT: 5432, DB_NAME: "${DB_NOTIFICACIONES_NAME}", DB_USER: "${DB_NOTIFICACIONES_USER}", DB_PASSWORD: "${DB_NOTIFICACIONES_PASSWORD}", RABBITMQ_HOST: rabbitmq, RABBITMQ_USER: "${RABBITMQ_USER}", RABBITMQ_PASSWORD: "${RABBITMQ_PASSWORD}" }
     depends_on: { database-notificaciones: { condition: service_healthy }, rabbitmq-setup: { condition: service_completed_successfully } }
     expose: ["8084"]
     networks: [microservices-network, notificaciones-db]
@@ -114,7 +117,7 @@ services:
   vacaciones-service:
     build: ./vacaciones
     restart: unless-stopped
-    environment: { DB_HOST: database-vacaciones, DB_PORT: 5432, DB_NAME: "${DB_VACACIONES_NAME}", DB_USER: "${DB_VACACIONES_USER}", DB_PASSWORD: "${DB_VACACIONES_PASSWORD}" }
+    environment: { DB_HOST: database-vacaciones, DB_PORT: 5432, DB_NAME: "${DB_VACACIONES_NAME}", DB_USER: "${DB_VACACIONES_USER}", DB_PASSWORD: "${DB_VACACIONES_PASSWORD}", RABBITMQ_HOST: rabbitmq, RABBITMQ_USER: "${RABBITMQ_USER}", RABBITMQ_PASSWORD: "${RABBITMQ_PASSWORD}" }
     depends_on: { database-vacaciones: { condition: service_healthy }, rabbitmq-setup: { condition: service_completed_successfully } }
     expose: ["8085"]
     networks: [microservices-network, vacaciones-db]

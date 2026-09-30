@@ -46,7 +46,7 @@ put("/exchanges/%2F/rrhh.events", {"type": "topic", "durable": True, "auto_delet
 bindings = {
     "perfiles.events": ["empleado.creado", "empleado.actualizado", "empleado.retirado"],
     "notificaciones.events": ["empleado.creado", "empleado.retirado", "vacaciones.programadas"],
-    "vacaciones.empleados": ["empleado.creado", "empleado.retirado"],
+    "vacaciones.empleados": ["empleado.creado", "empleado.actualizado", "empleado.retirado"],
 }
 for queue, routing_keys in bindings.items():
     put(f"/queues/%2F/{queue}", {"durable": True, "auto_delete": False, "arguments": {}})

@@ -29,6 +29,7 @@ class Repository:
         if self._schema_ready:
             return
         self._execute("ALTER TABLE empleados ADD COLUMN IF NOT EXISTS fecha_retiro TIMESTAMPTZ NULL")
+        self._execute("ALTER TABLE empleados ADD COLUMN IF NOT EXISTS motivo_retiro TEXT NULL")
         self._execute("ALTER TABLE empleados DROP CONSTRAINT IF EXISTS empleados_estado_check")
         self._execute(
             "ALTER TABLE empleados ADD CONSTRAINT empleados_estado_check "
@@ -84,7 +85,7 @@ class Repository:
     def actualizar_estado(self, empleado_id, estado):
         self.ensure_schema()
         row = self._query(
-            f"UPDATE empleados SET estado = %s WHERE id = %s RETURNING {COLUMNS}",
+            f"UPDATE empleados SET estado = %s WHERE id = %s AND estado = 'PENDIENTE' RETURNING {COLUMNS}",
             (estado, empleado_id),
         )
         return Empleado(**row) if row else None
@@ -104,11 +105,12 @@ class Repository:
         )
         return Empleado(**row) if row else None
 
-    def retirar(self, empleado_id):
+    def retirar(self, empleado_id, motivo):
         row = self._query(
-            f'''UPDATE empleados SET estado = 'RETIRADO', fecha_retiro = CURRENT_TIMESTAMP
+            f'''UPDATE empleados SET estado = 'RETIRADO', fecha_retiro = CURRENT_TIMESTAMP,
+                motivo_retiro = %s
                 WHERE id = %s AND estado <> 'RETIRADO' RETURNING {COLUMNS}''',
-            (empleado_id,),
+            (motivo, empleado_id),
         )
         return Empleado(**row) if row else None
 

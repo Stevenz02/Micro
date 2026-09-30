@@ -1,197 +1,108 @@
-# Reto 4 - Handoff técnico
+# Reto 4 — entrega técnica y guía para el compañero
 
-Este documento describe el estado comprobado del código al 27 de septiembre de 2026. No sustituye el README académico ni define contratos de eventos.
+Estado revisado el 29-09-2026 (America/Bogota). Fuente del contrato: `catalogo-de-eventos.pdf`, “Catálogo de Eventos del Ecosistema”, versión 1.0, entregado por el usuario. Este documento describe el código y las verificaciones reales; el PDF es la autoridad para los eventos. Los ejemplos de datos son solo para la demo.
 
-## 1. Estado general
+## Estado general
 
-**PARCIALMENTE COMPLETO.** Los servicios REST, sus bases de datos, el Gateway, Docker Compose, Swagger y las suites disponibles están implementados y verificados. RabbitMQ tiene su topología creada. La integración asíncrona queda pendiente porque no se encontró el Catálogo oficial de Eventos; no se inventaron versiones ni payloads. El E2E de eventos y la deduplicación efectiva no son ejecutables sin ese contrato.
+**La parte técnica del Reto 4 está implementada y verificada en Docker.** Los servicios REST, bases independientes, Gateway, topología RabbitMQ, productores, consumidores, deduplicación persistente, Swagger y flujo de extremo a extremo funcionan. Se probaron 145 tests sin fallos. No se hizo commit ni push; los cambios están en la rama local `features/kevin`.
 
-## 2. Qué implementó Kevin
+Quedan dos decisiones de negocio por confirmar, sin impedir el funcionamiento actual: de dónde debe venir el `motivo` del retiro y qué calendario define `diasHabiles`. La implementación usa `DELETE /empleados/{id}?motivo=...` y cuenta lunes a viernes, inclusive, sin festivos. El catálogo exige los campos pero no especifica esas dos reglas. Su ejemplo de 15–30 de marzo de 2026 indica 12 días, mientras ese intervalo tiene 11 días de lunes a viernes; por eso no se copió el número del ejemplo como una regla.
 
-- **Gateway:** proxy HTTP para empleados, departamentos, perfiles, notificaciones y vacaciones; conserva query string, cuerpo, headers relevantes y status HTTP, y responde 503 controlado si el upstream no está disponible.
-- **Empleados:** servicio Python/FastAPI con PostgreSQL; alta, consulta, actualización protegida, retiro lógico, filtros y reconciliación periódica de empleados pendientes.
-- **Departamentos:** servicio Node.js/Express con PostgreSQL; alta, consulta, listado, health y OpenAPI.
-- **RabbitMQ:** exchange, colas durables y bindings idempotentes inicializados mediante RabbitMQ Management API.
-- **Perfiles:** servicio Go con PostgreSQL; lectura y edición de los campos propios del perfil.
-- **Notificaciones:** servicio Java 21/Spring Boot con PostgreSQL; consultas del historial y por empleado; esquema con los tipos esperados.
-- **Vacaciones:** servicio .NET 8 con PostgreSQL; alta, consultas, filtros, reglas de negocio y cancelación lógica.
-- **Bases de datos:** una instancia PostgreSQL 16 independiente y un volumen por servicio de negocio.
-- **Docker:** Compose con redes separadas, healthchecks, servicios de aplicación non-root y solo dos puertos publicados en loopback.
-- **OpenAPI:** documentación para Departamentos, Perfiles, Notificaciones y Vacaciones; rutas verificadas detrás del Gateway.
-- **Pruebas:** suites de Python, Node, Go, Java y .NET ejecutadas; además, prueba funcional REST con Compose levantado.
-- **Reto 3:** se añadió `GET /health/dependencies` al Gateway, su prueba y el usuario non-root al contenedor de Departamentos; `.gitignore` excluye `bin/` y `obj/` de .NET.
+## Contrato oficial implementado
 
-## 3. Arquitectura actual
+Todos los mensajes usan el sobre `{"id":"UUID","type":"...","version":1,"occurredAt":"UTC ISO-8601","producer":"...","data":{...}}`. El identificador `id` del **mensaje** permite la deduplicación; no es el `empleadoId` ni el ID de la vacación. Se publican como JSON persistente en el exchange topic durable `rrhh.events` con routing key igual a `type`.
 
-| Servicio | Lenguaje | Puerto interno | Base de datos | Produce | Consume |
-|---|---|---:|---|---|---|
-| API Gateway | Python / FastAPI | 8080 | Ninguna | Ninguno | Ninguno |
-| Empleados | Python / FastAPI | 8081 | PostgreSQL `database-empleados` | Ninguno implementado | Ninguno |
-| Departamentos | Node.js / Express | 8082 | PostgreSQL `database-departamentos` | Ninguno | Ninguno |
-| Perfiles | Go / `net/http` | 8083 | PostgreSQL `database-perfiles` | Ninguno | Ninguno |
-| Notificaciones | Java 21 / Spring Boot | 8084 | PostgreSQL `database-notificaciones` | Ninguno | Ninguno |
-| Vacaciones | .NET 8 / ASP.NET minimal APIs | 8085 | PostgreSQL `database-vacaciones` | Ninguno implementado | Ninguno |
-| RabbitMQ | RabbitMQ 4.1 | AMQP 5672; Management 15672 | Volumen RabbitMQ | No hay productores conectados | No hay consumidores conectados |
+| Evento | Productor | Campos `data` del catálogo | Efecto actual |
+|---|---|---|---|
+| `empleado.creado` | empleados-service | `empleadoId,nombre,apellido,email,numeroEmpleado,cargo,area,departamentoId,fechaIngreso,estado` (ACTIVO) | Perfiles crea/sincroniza; Notificaciones registra traza `ALTA`; Vacaciones crea su réplica local |
+| `empleado.actualizado` | empleados-service | `empleadoId,nombre,apellido,email,cargo,area,departamentoId` | Perfiles sincroniza solo campos del empleado; Vacaciones actualiza el email de su réplica |
+| `empleado.retirado` | empleados-service | `empleadoId,email,fechaRetiro,motivo` | Perfiles archiva; Notificaciones registra traza `RETIRO`; Vacaciones marca la réplica RETIRADO |
+| `vacaciones.programadas` | vacaciones-service | `vacacionesId,empleadoId,email,fechaInicio,fechaFin,diasHabiles` | Notificaciones registra confirmación `VACACIONES` |
 
-Las bases de datos tienen volúmenes nombrados y redes internas individuales. Los servicios se encuentran además en la red interna compartida para comunicarse con el Gateway y RabbitMQ.
+`auth-service` aparece en el catálogo, pero **no existe en este proyecto hasta el Reto 5**. No se implementó ni se espera como consumidor. El catálogo indica que el correo de bienvenida espera `usuario.creado` y el de despedida `cuenta.desactivada` del Reto 5; los registros `ALTA` y `RETIRO` actuales son trazas, no correos enviados. `vacaciones.empleados` es una proyección interna necesaria para validar vacaciones sin consultar Empleados por REST; no añade un consumidor de negocio del catálogo.
 
-## 4. RabbitMQ
+## Implementación por servicio
 
-- Exchange: `rrhh.events`, tipo `topic`, durable.
-- Colas durables: `perfiles.events`, `notificaciones.events`, `vacaciones.empleados`.
-- Bindings:
-  - `perfiles.events`: `empleado.creado`, `empleado.actualizado`, `empleado.retirado`.
-  - `notificaciones.events`: `empleado.creado`, `empleado.retirado`, `vacaciones.programadas`.
-  - `vacaciones.empleados`: `empleado.creado`, `empleado.retirado`.
-- Inicializador: `Reto_4/rabbitmq/setup.py`; declara exchange, colas y bindings de forma idempotente y reintenta si RabbitMQ aún no está disponible.
-- Management UI: `http://localhost:15672` (publicada en `127.0.0.1`). AMQP `5672` solo está expuesto dentro de Docker.
-- **Pendiente:** productores, consumidores, ACK/redelivery de aplicación, reconexión de clientes y deduplicación. No hay consumidores suscritos actualmente; las colas y tablas preparadas no prueban entrega ni procesamiento.
+- **Empleados (Python/FastAPI):** publica `empleado.creado` al confirmar un alta ACTIVO o al activar un PENDIENTE mediante reconciliación; `empleado.actualizado` después de un PUT exitoso; `empleado.retirado` solo en el primer retiro. No publica alta de PENDIENTE/RECHAZADO ni repite retiro en el segundo DELETE. Guarda `motivo_retiro` y conserva la fecha UTC del primer retiro. El primer DELETE requiere `?motivo=...`; las repeticiones idempotentes no lo requieren. Publica después del commit de PostgreSQL, con confirmación del broker y mensaje persistente.
+- **Perfiles (Go):** consume `perfiles.events` con ACK manual posterior al commit. Crea el perfil, sincroniza nombre/apellido/email/cargo/área/departamento y archiva al retirar. Respeta los campos propios editables (`telefono,direccion,ciudad,biografia`). El cambio del empleado no los sobrescribe. Migración de columnas para volúmenes preexistentes.
+- **Notificaciones (Java/Spring Boot):** consume `notificaciones.events` con ACK manual; guarda una notificación de traza o confirmación por evento y el marcador de `eventos_procesados` en una misma transacción. Los tipos actuales son `ALTA`, `RETIRO` y `VACACIONES`. Hay migración del CHECK del tipo para volúmenes existentes. OpenAPI publica `servers: [{url: "/"}]` para que “Try it out” use el Gateway.
+- **Vacaciones (.NET 8):** consume `vacaciones.empleados` con ACK manual para mantener `empleados_replica`, incluido email actualizado y retiro. Una vacación programada se guarda primero y luego publica `vacaciones.programadas` con email de la réplica y días hábiles. La API conserva las validaciones de fechas, solapamiento, empleado activo y cancelación lógica.
+- **RabbitMQ:** `rabbitmq/setup.py` declara de forma idempotente exchange, tres colas durables y bindings. `perfiles.events` recibe creado/actualizado/retirado; `notificaciones.events` recibe creado/retirado/vacaciones.programadas; `vacaciones.empleados` recibe creado/actualizado/retirado. El binding de actualizado en Vacaciones mantiene vigente el destinatario de la confirmación.
 
-## 5. Empleados
+Los tres consumidores persisten `eventos_procesados(id)` dentro de la misma transacción que el efecto en su BD y hacen ACK después. Una entrega repetida con el mismo `id` no repite el efecto; errores temporales se reencolan y los mensajes inválidos se rechazan. Hay bucles de reconexión para los consumidores. El productor de Empleados registra en logs el fallo de publicación después del commit; el de Vacaciones también publica después del commit. **Aún no hay outbox/replay automático:** si la BD confirma y el broker falla en ese instante, el dato queda guardado pero el evento puede faltar. Esta es la principal limitación de fiabilidad pendiente para endurecimiento posterior, no un fallo del flujo comprobado con RabbitMQ disponible.
 
-Endpoints disponibles por Gateway:
+## Docker: qué quedó hecho y qué falta
 
-- `POST /empleados`, `GET /empleados`, `GET /empleados/{id}`.
-- `PUT /empleados/{id}`.
-- `DELETE /empleados/{id}`.
-- `GET /health/dependencies`.
-
-`PUT` edita los campos de negocio, valida email, unicidad y departamento, conserva el `id` y no acepta campos adicionales como estado o `fechaRetiro`. Un empleado `RETIRADO` no se puede modificar ni reactivar.
-
-`DELETE` es una baja lógica: asigna `RETIRADO` y una fecha UTC. Un segundo `DELETE` devuelve el estado existente y conserva la misma fecha. `GET /empleados/{id}` sigue encontrándolo. El listado acepta `estado`, `desde` y `hasta`; el rango solo se admite para `RETIRADO`, exige fechas válidas y `desde <= hasta`.
-
-La reconciliación periódica consulta empleados `PENDIENTE` con Departamentos: activa si el departamento ya existe y rechaza si la respuesta confirma que no existe. Las fallas temporales dejan el registro pendiente. No publica eventos porque falta el contrato.
-
-## 6. Perfiles
-
-- Lenguaje: Go; base: PostgreSQL propia.
-- Endpoints: `GET /perfiles`, `GET /perfiles/{empleadoId}`, `PUT /perfiles/{empleadoId}`, `/health`, `/perfiles/docs`, `/perfiles/openapi.json`.
-- `PUT` solo permite `telefono`, `direccion`, `ciudad` y `biografia`. Rechaza campos protegidos/desconocidos. Si el perfil no existe devuelve 404.
-- No hay endpoint REST para crear perfiles: el alta default corresponde al consumidor pendiente de `empleado.creado`.
-- Consumidor y deduplicación persistente: **no implementados**. Existe la tabla `eventos_procesados`, pero no se usa para procesar mensajes.
-
-## 7. Notificaciones
-
-- Lenguaje: Java 21 con Spring Boot; base: PostgreSQL propia.
-- Endpoints: `GET /notificaciones`, `GET /notificaciones/{empleadoId}`, `/health`, `/notificaciones/docs`, `/notificaciones/openapi.json`.
-- Tipos permitidos en el esquema: `BIENVENIDA`, `DESVINCULACION`, `VACACIONES`.
-- Consumidor de `empleado.creado`, `empleado.retirado` y `vacaciones.programadas`, generación de historial/logs de esos eventos y deduplicación: **no implementados**. La tabla `eventos_procesados` está preparada, sin lógica conectada.
-
-## 8. Vacaciones
-
-- Lenguaje: .NET 8; base: PostgreSQL propia.
-- Endpoints: `POST /vacaciones`, `GET /vacaciones`, `GET /vacaciones/{id}`, `GET /vacaciones?empleadoId={id}`, `DELETE /vacaciones/{id}`, `/health`.
-- Rechaza fin igual/anterior al inicio y fechas de inicio pasadas. El empleado debe existir en `empleados_replica` y no estar retirado. Rechaza solapamientos inclusivos (`nuevoInicio <= existenteFin && nuevoFin >= existenteInicio`).
-- `DELETE` marca `CANCELADA`; no borra el registro y no deja cancelar periodos ya iniciados o ya cancelados.
-- La estrategia implementada es una réplica PostgreSQL local (`empleados_replica`), no una consulta REST. Actualmente no se actualiza sola: depende del consumidor pendiente de `empleado.creado` y `empleado.retirado`. No está implementado el productor de `vacaciones.programadas`; `eventos_procesados` tampoco está conectado a un consumidor.
-
-## 9. Docker
-
-`docker compose -f Reto_4/docker-compose.yml up --build -d` construyó y levantó los servicios el 27-09-2026. Estado comprobado después de reiniciar: doce servicios permanentes healthy y el inicializador transitorio `rabbitmq-setup` terminó con código 0.
-
-Hay un Gateway, cinco servicios de negocio, cinco PostgreSQL, RabbitMQ y el inicializador transitorio. Hay seis redes (una compartida y cinco internas) y seis volúmenes de datos. Los puertos publicados son `127.0.0.1:8080` y `127.0.0.1:15672`; 8081–8085 no se publican al host. Los servicios de aplicación corren como `appuser`, `node` o `app`. Bases de datos y RabbitMQ usan el usuario configurado por sus imágenes oficiales.
-
-La configuración Compose fue validada con `docker compose -f Reto_4/docker-compose.yml config --quiet`.
-
-## 10. Swagger
-
-Comprobado a través de `http://localhost:8080` (siguiendo redirecciones de Swagger UI):
-
-- `http://localhost:8080/perfiles/docs` y `/perfiles/openapi.json` — HTTP 200.
-- `http://localhost:8080/notificaciones/docs` y `/notificaciones/openapi.json` — HTTP 200 final.
-- `http://localhost:8080/vacaciones/docs` y `/vacaciones/v1/openapi.json` — HTTP 200 final.
-
-## 11. Pruebas
-
-Totales ejecutados en esta revisión; no se cuentan pruebas omitidas. Go y Java se ejecutaron dentro de contenedores de toolchain porque `go` y `mvn` no están instalados en el host.
-
-| Suite | Comando | Aprobadas | Fallidas | Advertencias |
-|---|---|---:|---:|---|
-| Reto 3 Python | `.\.venv\Scripts\python.exe -m pytest Reto_3/tests -q` | 43 | 0 | 8 deprecaciones de dependencias (`starlette`, `pybreaker`) |
-| Reto 3 Node | `npm --prefix Reto_3/departamentos test` | 12 | 0 | 0 |
-| Reto 4 Python | `.\.venv\Scripts\python.exe -m pytest Reto_4/tests -q` | 56 | 0 | 8 deprecaciones de dependencias (`starlette`, `pybreaker`) |
-| Reto 4 Node | `npm --prefix Reto_4/departamentos test` | 12 | 0 | 0 |
-| Perfiles Go | `go mod tidy && go test -count=1 ./...` en `Reto_4/perfiles` | 3 | 0 | 0 |
-| Notificaciones Java | `mvn -B -ntp test` en `Reto_4/notificaciones` | 2 | 0 | avisos deprecados de Mockito/agente dinámico; sin fallos |
-| Vacaciones .NET | `dotnet test Reto_4/vacaciones.tests/Vacaciones.Tests.csproj --nologo` | 11 | 0 | 0 |
-
-Además, `docker compose up --build` reconstruyó los seis servicios de aplicación sin errores. Los Dockerfiles de Go y Java ejecutan sus pruebas durante el build (`go test ./...` y `mvn package`, respectivamente).
-
-## 12. Prueba funcional
-
-Con Compose levantado se crearon IDs nuevos: un departamento, un empleado activo y una vacación. Se verificaron alta/consulta/actualización del empleado, conservación de identidad, creación/consulta/listado de vacaciones, fin igual al inicio (400), inicio pasado (400), empleado desconocido (400), solapamiento (400), cancelación lógica (`CANCELADA`), consulta posterior, retiro (`RETIRADO`), segundo retiro con fecha idéntica, consulta del retirado y filtros de auditoría/rango. La prueba de solapamiento cubrió el caso coincidente; los siete límites geométricos de periodos están cubiertos por la suite .NET.
-
-Como aún no existe el consumidor de empleados, para probar la ruta REST de vacaciones se insertó manualmente el empleado de prueba en `empleados_replica`; esto **no** representa el E2E por eventos. Perfiles devolvió la lista vacía y 404 para el empleado, como corresponde mientras falte el consumidor que crea el perfil. Notificaciones devolvió listas vacías porque no hay consumidores que generen registros.
-
-## 13. Persistencia
-
-Después de `docker compose restart` y de esperar healthchecks, se confirmó que seguían existiendo el departamento de prueba, el empleado retirado con su `fechaRetiro` UTC, la vacación con estado `CANCELADA` y las tres colas RabbitMQ durables. No había perfil ni notificación asociados a la prueba; tampoco eventos procesados por aplicación, porque no hay consumidores activos.
-
-## 14. Pendientes para terminar el reto
-
-### Pendientes de código
-
-**Bloqueo: no se encontró el Catálogo oficial de Eventos con las secciones 3.1, 3.2, 3.3 y 3.8. No se inventaron versiones ni payloads.**
-
-La búsqueda en el repositorio, carpetas relacionadas de `D:\Repositorios_UQ` y adjuntos disponibles encontró referencias a los nombres de eventos en las instrucciones y en los bindings, pero no el contrato oficial ni sus campos `data`. Por tanto, queda bloqueado únicamente lo que depende de ese contrato:
-
-- publicar los eventos de empleados y vacaciones, incluidos los casos de empleados pendientes, retiro idempotente y reconciliación;
-- consumirlos en Perfiles, Notificaciones y Vacaciones para crear/sincronizar/archivar perfiles, generar notificaciones y mantener la réplica local;
-- deduplicar por envelope `id`, confirmar ACK/redelivery y reconexión desde consumidores reales;
-- ejecutar el E2E de fan-out, redelivery y efecto único.
-
-**E2E asíncrono: NO EJECUTABLE POR FALTA DE CONTRATO OFICIAL.** La topología preparada no equivale a productores o consumidores funcionando.
-
-### Pendientes de documentación
-
-Para el compañero: README académico; justificación de RabbitMQ frente a Kafka/Redis Streams/NATS; tabla servicio-lenguaje; arquitectura final; evidencias de deduplicación cuando exista; guía de demostración; capturas/evidencias; explicación de la estrategia de réplica de Vacaciones; contratos/documentación de eventos oficiales y demás requisitos del profesor.
-
-## 15. Cómo levantar el proyecto
-
-Desde `Reto_4/`, prepara `.env` a partir de `.env.example` y configura credenciales locales. `.env` está excluido por `.gitignore`. Luego ejecuta:
+Desde `Reto_4/`, copiar `.env.example` a `.env` y ajustar las credenciales locales antes de levantar. `.env` no se versiona. Comandos:
 
 ```powershell
-docker compose up --build -d --wait --wait-timeout 180
+Copy-Item .env.example .env
+docker compose config --quiet
+docker compose up --build -d --wait --wait-timeout 240
 docker compose ps
 ```
 
-El comando se validó también desde la raíz como `docker compose -f Reto_4/docker-compose.yml up --build -d --wait --wait-timeout 180`.
+Si ya existe `.env`, conservarlo y ejecutar desde `Reto_4/` solo los comandos `docker compose`. Desde la raíz del repositorio se puede usar `docker compose -f Reto_4/docker-compose.yml ...`.
 
-## 16. Flujo de demostración
+**Hecho y verificado:** Compose pasa `RABBITMQ_HOST/USER/PASSWORD` a los cuatro servicios que usan eventos; espera a `rabbitmq-setup` antes de iniciarlos. Los Dockerfiles compilan los seis servicios, y los archivos `.dockerignore` reducen los contextos. Se ejecutó `up --build -d --wait --wait-timeout 240`: doce contenedores permanentes healthy; `rabbitmq-setup` finalizó con código 0, como corresponde a su trabajo transitorio. Cinco PostgreSQL y RabbitMQ tienen volúmenes; hay una red compartida y redes de BD internas. Solo están publicados al host `127.0.0.1:8080` (Gateway) y `127.0.0.1:15672` (Management); los puertos de negocio no se publican. Las colas durables mostraron un consumidor cada una, ACK manual y prefetch 1. Reiniciar RabbitMQ mostró reconexión y procesamiento de un alta posterior. Un reinicio completo de Compose conservó empleado, perfil, vacación, notificaciones, colas y marcadores de deduplicación.
 
-Ejemplos para ejecutar desde PowerShell, cambiando los IDs y asegurando que no existan previamente:
+**Pendiente de Docker para la entrega:** ninguno que impida levantar o demostrar Reto 4. El compañero debe preparar su propio `.env`, levantar `up --build` en su equipo y capturar las evidencias que pida el profesor. Para una entrega con garantías superiores harían falta outbox/replay, política de mensajes inválidos (DLQ) y monitoreo de consumidores/conexión AMQP; son mejoras futuras. Los healthchecks actuales comprueban la API y/o BD, no demuestran por sí solos que la suscripción AMQP esté activa: en la demo mirar la UI de RabbitMQ o ejecutar el flujo real. No usar `docker compose down -v` si se quieren conservar los datos de prueba.
 
-```powershell
-$base = 'http://localhost:8080'
-curl.exe -i -X POST "$base/departamentos" -H 'Content-Type: application/json' -d '{"id":"DEP-DEMO","nombre":"Tecnologia","descripcion":"Departamento de prueba"}'
-curl.exe -i -X POST "$base/empleados" -H 'Content-Type: application/json' -d '{"id":"E-DEMO","nombre":"Ana","apellido":"Prueba","email":"ana.demo@empresa.test","numeroEmpleado":"EMP-DEMO","cargo":"Analista","area":"Tecnologia","departamentoId":"DEP-DEMO","fechaIngreso":"2026-09-27","estado":"ACTIVO"}'
-curl.exe -i "$base/empleados/E-DEMO"
-curl.exe -i -X PUT "$base/empleados/E-DEMO" -H 'Content-Type: application/json' -d '{"nombre":"Ana","apellido":"Prueba","email":"ana.demo@empresa.test","numeroEmpleado":"EMP-DEMO","cargo":"Analista senior","area":"Tecnologia","departamentoId":"DEP-DEMO","fechaIngreso":"2026-09-27"}'
-curl.exe -i "$base/perfiles/E-DEMO"
-curl.exe -i "$base/notificaciones/E-DEMO"
-curl.exe -i -X POST "$base/vacaciones" -H 'Content-Type: application/json' -d '{"id":"V-DEMO","empleadoId":"E-DEMO","fechaInicio":"2026-11-10","fechaFin":"2026-11-15"}'
-curl.exe -i "$base/vacaciones?empleadoId=E-DEMO"
-curl.exe -i -X DELETE "$base/empleados/E-DEMO"
-curl.exe -i "$base/empleados/E-DEMO"
-curl.exe -i "$base/empleados?estado=RETIRADO&desde=2026-09-27&hasta=2026-09-27"
+Los `init.sql` se aplican automáticamente solo cuando se crea un volumen de BD. Para volúmenes ya existentes, las nuevas columnas y el CHECK de Notificaciones se migran al iniciar los servicios; **no hace falta borrar volúmenes**. Empleados antiguos creados antes de esta integración no generan eventos retroactivos y los retiros históricos no tienen `motivo` recuperable. Si se necesita reconstruir ese histórico, requiere una migración/backfill de datos acordada aparte.
+
+## Pruebas y evidencia funcional
+
+| Suite ejecutada | Aprobadas | Fallidas |
+|---|---:|---:|
+| Reto 3 Python | 43 | 0 |
+| Reto 3 Node | 12 | 0 |
+| Reto 4 Python | 60 | 0 |
+| Reto 4 Node | 12 | 0 |
+| Perfiles Go | 4 | 0 |
+| Notificaciones Java (build Maven en Docker) | 2 | 0 |
+| Vacaciones .NET | 12 | 0 |
+| **Total** | **145** | **0** |
+
+Se comprobó además `docker compose config --quiet` y el build de las seis aplicaciones. El E2E real por Gateway creó el departamento `DEP-CAT-1790730785` y el empleado `E-CAT-1790730785`: aparecieron perfil, traza `ALTA` y réplica de Vacaciones sin insertar datos a mano. Una actualización cambió email/apellido/cargo en Perfiles y el email de la réplica, mientras el perfil conservó teléfono y ciudad propios. La vacación `V-CAT-1790730785` produjo una notificación `VACACIONES` al email actualizado. El primer retiro con `motivo=RENUNCIA` archivó perfil, marcó réplica RETIRADO y creó una traza `RETIRO`. El segundo retiro mantuvo la misma `fechaRetiro` y no creó otro efecto.
+
+La deduplicación se comprobó de dos maneras. Primero, dos publicaciones iguales por la API Management de RabbitMQ produjeron un perfil, una traza ALTA y un marcador por BD para `E-DEDUP-1790730952`. Después se abrió la **interfaz web** de RabbitMQ en Edge mediante Playwright y se pulsó dos veces “Publish message” con el mismo payload: `id=85a5a1da-d41b-47aa-8e30-02415a710672`, `empleadoId=E-UI-DEDUP-1790731828`. El resultado verificado por Gateway fue **un perfil y una sola notificación ALTA**; la consulta SQL de `eventos_procesados` para ese `id` devolvió **1 en Perfiles, 1 en Notificaciones y 1 en Vacaciones**. La repetición presencial queda preparada con los pasos de abajo. Después de reiniciar RabbitMQ se creó `E-REC-1790731362` y las tres colas volvieron a procesarlo. Después de reiniciar todo Compose, los datos y marcadores previos persistieron.
+
+Swagger de Notificaciones: `http://localhost:8080/notificaciones/docs` devolvió 200, `/notificaciones/openapi.json` declaró servidor `/` y `/notificaciones/openapi.json/swagger-config` devolvió 200 con URL del contrato bajo el Gateway. En Edge, “Try it out” → “Execute” para `GET /notificaciones` llamó a `http://localhost:8080/notificaciones` y recibió **200 JSON**.
+
+## Demo en vivo desde RabbitMQ Management UI
+
+1. Levantar Compose y abrir `http://localhost:15672`. Entrar con `RABBITMQ_USER` y `RABBITMQ_PASSWORD` de `Reto_4/.env`. En “Queues and Streams” deben verse `perfiles.events`, `notificaciones.events` y `vacaciones.empleados` con un consumidor cada una.
+2. Abrir “Exchanges” → `rrhh.events` → “Publish message”. En “Routing key” escribir `empleado.creado`. En “Payload” pegar el JSON siguiente. Si ya se hizo esta prueba antes, cambiar **una vez** tanto `id` como `empleadoId`, email y `numeroEmpleado`, y luego reutilizar exactamente ese mismo JSON en ambos envíos. Elegir payload como texto/JSON; las propiedades opcionales pueden quedar vacías.
+3. Pulsar “Publish message” **dos veces sin modificar ni un carácter del JSON**. La UI debe indicar que el exchange lo enrutó a las colas correspondientes.
+4. Consultar `http://localhost:8080/perfiles/E-DEMO-DUP-01` y `http://localhost:8080/notificaciones/E-DEMO-DUP-01`. Debe existir **un perfil** y **una sola notificación ALTA**. Consultar otra vez tras unos segundos; los conteos no aumentan. En la base de Perfiles, Notificaciones y Vacaciones, `SELECT COUNT(*) FROM eventos_procesados WHERE id='9f6d58b2-e26d-4c3b-a8ee-8808026f68aa';` debe dar 1 en cada una. Si se cambiaron los IDs del JSON, usar el nuevo `id` en la consulta.
+5. Esta publicación sintética prueba los consumidores; no inserta un registro en Empleados. Para mostrar el flujo productor real, crear primero un departamento y luego un empleado por el Gateway, consultar perfil/notificaciones, actualizarlo, programar vacaciones y retirarlo con `?motivo=RENUNCIA`.
+
+```json
+{
+  "id": "9f6d58b2-e26d-4c3b-a8ee-8808026f68aa",
+  "type": "empleado.creado",
+  "version": 1,
+  "occurredAt": "2026-09-29T18:00:00.000Z",
+  "producer": "empleados-service",
+  "data": {
+    "empleadoId": "E-DEMO-DUP-01",
+    "nombre": "Ana",
+    "apellido": "Demo",
+    "email": "ana.demo.duplicado@empresa.test",
+    "numeroEmpleado": "EMP-DEMO-DUP-01",
+    "cargo": "Analista",
+    "area": "Tecnologia",
+    "departamentoId": "DEP-DEMO-DUP-01",
+    "fechaIngreso": "2026-09-29",
+    "estado": "ACTIVO"
+  }
+}
 ```
 
-Las consultas de perfil responderán 404 y las de notificaciones no mostrarán nuevos registros hasta implementar consumidores. El alta de vacaciones solo será exitosa cuando `E-DEMO` exista como activo en `empleados_replica`; hoy esa réplica no se alimenta automáticamente, así que el comando no debe presentarse como flujo E2E funcional. Los servicios de Departamentos ofrecen POST/GET; el Gateway acepta y reenvía métodos HTTP, pero la disponibilidad efectiva depende de cada endpoint de negocio.
+Para una prueba completa con APIs, usar IDs nuevos y este orden: `POST /departamentos` → `POST /empleados` (ACTIVO) → `GET /perfiles/{id}` y `GET /notificaciones/{id}` → `PUT /perfiles/{id}` con teléfono/ciudad → `PUT /empleados/{id}` con cambios de email/cargo → `POST /vacaciones` con fechas futuras → `DELETE /empleados/{id}?motivo=RENUNCIA`. Esperar unos segundos entre escritura y lectura porque los consumidores son asíncronos. Antes de retirar, verificar que la confirmación de Vacaciones llegó al email actualizado; después, que Perfiles quedó archivado. Repetir el DELETE para comprobar idempotencia.
 
-## 17. Archivos importantes
+## Tareas del compañero y límites del alcance
 
-- `Reto_4/docker-compose.yml`, `.env.example`.
-- `Reto_4/api-gateway/app/`.
-- `Reto_4/empleados/app/`, `Reto_4/empleados/init.sql`.
-- `Reto_4/departamentos/src/`, `Reto_4/departamentos/init.sql`.
-- `Reto_4/perfiles/main.go`, `main_test.go`, `init.sql`.
-- `Reto_4/notificaciones/src/`, `pom.xml`, `init.sql`.
-- `Reto_4/vacaciones/Program.cs`, `init.sql`; `Reto_4/vacaciones.tests/`.
-- `Reto_4/rabbitmq/setup.py`.
-- `Reto_4/tests/`, `Reto_4/requirements-test.txt`.
+Al compañero le queda preparar el README/entrega académica: arquitectura y tabla de lenguajes, justificación de RabbitMQ frente a las alternativas, diagrama de flujo, referencia al catálogo, evidencia de Docker healthy y de la demo de duplicado desde la **UI**, capturas solicitadas por el profesor y explicación de la réplica local de Vacaciones. Debe mencionar las dos decisiones de negocio pendientes de confirmar (`motivo` y `diasHabiles`) y la limitación de publicación post-commit sin outbox. Si el profesor pide demostrar “Try it out”, abrir `/notificaciones/docs` por el Gateway y ejecutar un GET desde el navegador.
 
-## 18. Recomendación para continuar con Claude
-
-Prompt sugerido:
-
-> Lee `Reto_4/HANDOFF_RETO4.md` antes de modificar el proyecto. Conserva la implementación existente y completa únicamente los pendientes allí descritos, priorizando documentación y cualquier bloqueo resuelto posteriormente. No inventes contratos: si aparece el Catálogo oficial, verifica su versión y payload antes de implementar productores, consumidores y pruebas E2E.
+No implementar `auth-service`, `usuario.creado` ni `cuenta.desactivada` en Reto 4; corresponden a Reto 5. No presentar `ALTA` o `RETIRO` como correos enviados. El código y esta documentación quedan locales en `features/kevin` hasta que Kevin decida versionarlos/subirlos.

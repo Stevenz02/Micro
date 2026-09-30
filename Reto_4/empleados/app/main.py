@@ -6,13 +6,14 @@ from typing import Literal
 
 import httpx
 import psycopg
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Query
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from .config import Settings, database_config
 from .departamentos import DepartamentosClient
+from .events import RabbitPublisher, created_data, updated_data, retired_data
 from .models import Empleado, EmpleadoActualizacion
 from .repository import Repository
 
@@ -31,7 +32,16 @@ ERRORS = {
 }
 
 
-def reconciliar_pendientes(repo, departamentos, limit=50):
+def publish_after_commit(publisher, event_type, data):
+    if publisher is None:
+        return
+    try:
+        publisher.publish(event_type, data)
+    except Exception:
+        logger.exception("No se pudo publicar %s para empleado %s tras commit de BD", event_type, data["empleadoId"])
+
+
+def reconciliar_pendientes(repo, departamentos, limit=50, publisher=None):
     """Revisa empleados PENDIENTE y actualiza solo con evidencia del servicio de departamentos."""
     resultado = {"activados": 0, "rechazados": 0, "pendientes": 0}
     for empleado in repo.listar_pendientes(limit):
@@ -44,8 +54,10 @@ def reconciliar_pendientes(repo, departamentos, limit=50):
             else:
                 resultado["pendientes"] += 1
         else:
-            repo.actualizar_estado(empleado.id, "ACTIVO")
-            resultado["activados"] += 1
+            activado = repo.actualizar_estado(empleado.id, "ACTIVO")
+            if activado is not None:
+                publish_after_commit(publisher, "empleado.creado", created_data(activado))
+                resultado["activados"] += 1
     return resultado
 
 
@@ -57,6 +69,7 @@ async def reconciliar_periodicamente(app, intervalo):
                 reconciliar_pendientes,
                 app.state.repository,
                 app.state.departamentos,
+                publisher=app.state.publisher,
             )
             if any(resultado.values()):
                 logger.info("Reconciliacion de empleados pendientes: %s", resultado)
@@ -66,16 +79,18 @@ async def reconciliar_periodicamente(app, intervalo):
             logger.exception("No se pudo reconciliar empleados pendientes")
 
 
-def create_app(repository=None, departamentos=None):
+def create_app(repository=None, departamentos=None, publisher=None):
     @asynccontextmanager
     async def lifespan(app):
         if repository is not None and departamentos is not None:
             app.state.repository = repository
             app.state.departamentos = departamentos
+            app.state.publisher = publisher
             yield
         else:
             settings = Settings.from_env()
             app.state.repository = Repository(database_config())
+            app.state.publisher = publisher or RabbitPublisher()
             with httpx.Client(follow_redirects=False, trust_env=False) as client:
                 app.state.departamentos = DepartamentosClient(settings, client)
                 tarea_reconciliacion = asyncio.create_task(
@@ -158,7 +173,9 @@ def create_app(repository=None, departamentos=None):
             pendiente = empleado.model_copy(update={"estado": "PENDIENTE"})
             creado = crear_empleado(repo, pendiente)
             return JSONResponse(status_code=202, content=creado.model_dump(mode="json"))
-        return crear_empleado(repo, empleado.model_copy(update={"estado": "ACTIVO"}))
+        creado = crear_empleado(repo, empleado.model_copy(update={"estado": "ACTIVO"}))
+        publish_after_commit(app.state.publisher, "empleado.creado", created_data(creado))
+        return creado
 
     @app.get(
         "/empleados",
@@ -200,6 +217,7 @@ def create_app(repository=None, departamentos=None):
         actualizado = repo.actualizar(id, cambios)
         if actualizado is None:
             raise HTTPException(400, "El empleado ya fue retirado")
+        publish_after_commit(app.state.publisher, "empleado.actualizado", updated_data(actualizado))
         return actualizado
 
     @app.delete(
@@ -209,14 +227,18 @@ def create_app(repository=None, departamentos=None):
         responses=ERRORS,
         summary="Retirar un empleado mediante baja logica",
     )
-    def retirar(id: str):
+    def retirar(id: str, motivo: str | None = Query(default=None, description="Motivo obligatorio para el primer retiro; la repetición idempotente no lo requiere")):
         repo = app.state.repository
         actual = repo.obtener(id)
         if actual is None:
             raise HTTPException(404, f"El empleado con id {id} no existe")
         if actual.estado == "RETIRADO":
             return actual
-        retirado = repo.retirar(id)
+        if motivo is None or not motivo.strip():
+            raise HTTPException(400, "motivo es obligatorio para retirar por primera vez")
+        retirado = repo.retirar(id, motivo.strip())
+        if retirado is not None:
+            publish_after_commit(app.state.publisher, "empleado.retirado", retired_data(retirado, motivo.strip()))
         return retirado or repo.obtener(id)
 
     @app.get(

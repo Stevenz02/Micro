@@ -12,6 +12,7 @@ CREATE TABLE empleados (
     fecha_ingreso   DATE NOT NULL,
     estado          TEXT NOT NULL DEFAULT 'ACTIVO' CHECK (estado IN ('ACTIVO', 'PENDIENTE', 'RECHAZADO', 'RETIRADO')),
     fecha_retiro    TIMESTAMPTZ NULL,
+    motivo_retiro   TEXT NULL,
     CHECK ((estado = 'RETIRADO' AND fecha_retiro IS NOT NULL) OR (estado <> 'RETIRADO' AND fecha_retiro IS NULL))
 );
 -- No hay FK entre bases: departamentos se valida exclusivamente por HTTP.

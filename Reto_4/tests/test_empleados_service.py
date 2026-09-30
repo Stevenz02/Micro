@@ -313,11 +313,11 @@ def test_delete_es_idempotente_y_logico(api):
     retirado = Empleado(**{**EMPLEADO_EJEMPLO, "estado": "RETIRADO", "fechaRetiro": "2026-09-27T12:00:00Z"})
     repo.obtener.side_effect = [activo, retirado]
     repo.retirar.return_value = retirado
-    first = client.delete("/empleados/E001")
+    first = client.delete("/empleados/E001?motivo=RENUNCIA")
     second = client.delete("/empleados/E001")
     assert first.status_code == second.status_code == 200
     assert first.json()["estado"] == second.json()["estado"] == "RETIRADO"
-    repo.retirar.assert_called_once_with("E001")
+    repo.retirar.assert_called_once_with("E001", "RENUNCIA")
 
 
 def test_filtros_retirados_y_rango(api):
