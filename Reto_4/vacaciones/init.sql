@@ -12,6 +12,7 @@ CREATE INDEX vacaciones_empleado_periodo_idx ON vacaciones(empleado_id, fecha_in
 CREATE TABLE empleados_replica (
     empleado_id TEXT PRIMARY KEY,
     estado TEXT NOT NULL CHECK (estado IN ('ACTIVO','RETIRADO')),
+    email TEXT,
     actualizado_en TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
