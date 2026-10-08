@@ -1,0 +1,215 @@
+# Reto 5 - Seguridad y control de acceso con JWT
+# Reutiliza empleados, departamentos y perfiles del Reto 4 (sin cambios de lógica) y agrega
+# auth-service; gateway, notificaciones y vacaciones se construyen desde Reto_5.
+services:
+  rabbitmq:
+    image: rabbitmq:4.1-management-alpine
+    restart: unless-stopped
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:?Configure RABBITMQ_USER en .env}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:?Configure RABBITMQ_PASSWORD en .env}
+    volumes:
+      - rabbitmq-data:/var/lib/rabbitmq
+    ports: ["127.0.0.1:${RABBITMQ_MANAGEMENT_PORT:-15672}:15672"]
+    expose: ["5672"]
+    networks: [microservices-network]
+    healthcheck: { test: [CMD, rabbitmq-diagnostics, -q, ping], interval: 5s, timeout: 5s, retries: 20, start_period: 15s }
+
+  # Transitorio: declara exchange, colas y bindings (incluye auth.events del Reto 5) y termina
+  rabbitmq-setup:
+    image: python:3.12-alpine
+    restart: "no"
+    environment:
+      RABBITMQ_USER: ${RABBITMQ_USER}
+      RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD}
+    volumes: ["./rabbitmq/setup.py:/setup.py:ro"]
+    command: [python, /setup.py]
+    depends_on: { rabbitmq: { condition: service_healthy } }
+    networks: [microservices-network]
+
+  # ---------------- Bases de datos (una por servicio) ----------------
+  database-empleados:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment: { POSTGRES_DB: "${DB_EMPLEADOS_NAME}", POSTGRES_USER: "${DB_EMPLEADOS_USER}", POSTGRES_PASSWORD: "${DB_EMPLEADOS_PASSWORD}" }
+    volumes: ["vol-empleados:/var/lib/postgresql/data", "../Reto_4/empleados/init.sql:/docker-entrypoint-initdb.d/01-init.sql:ro"]
+    networks: [empleados-db]
+    healthcheck: &db-health { test: [CMD-SHELL, "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"], interval: 5s, timeout: 5s, retries: 15, start_period: 10s }
+
+  database-departamentos:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment: { POSTGRES_DB: "${DB_DEPARTAMENTOS_NAME}", POSTGRES_USER: "${DB_DEPARTAMENTOS_USER}", POSTGRES_PASSWORD: "${DB_DEPARTAMENTOS_PASSWORD}" }
+    volumes: ["vol-departamentos:/var/lib/postgresql/data", "../Reto_4/departamentos/init.sql:/docker-entrypoint-initdb.d/01-init.sql:ro"]
+    networks: [departamentos-db]
+    healthcheck: *db-health
+
+  database-perfiles:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment: { POSTGRES_DB: "${DB_PERFILES_NAME}", POSTGRES_USER: "${DB_PERFILES_USER}", POSTGRES_PASSWORD: "${DB_PERFILES_PASSWORD}" }
+    volumes: ["vol-perfiles:/var/lib/postgresql/data", "../Reto_4/perfiles/init.sql:/docker-entrypoint-initdb.d/01-init.sql:ro"]
+    networks: [perfiles-db]
+    healthcheck: *db-health
+
+  database-notificaciones:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment: { POSTGRES_DB: "${DB_NOTIFICACIONES_NAME}", POSTGRES_USER: "${DB_NOTIFICACIONES_USER}", POSTGRES_PASSWORD: "${DB_NOTIFICACIONES_PASSWORD}" }
+    volumes: ["vol-notificaciones:/var/lib/postgresql/data", "./notificaciones/init.sql:/docker-entrypoint-initdb.d/01-init.sql:ro"]
+    networks: [notificaciones-db]
+    healthcheck: *db-health
+
+  database-vacaciones:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment: { POSTGRES_DB: "${DB_VACACIONES_NAME}", POSTGRES_USER: "${DB_VACACIONES_USER}", POSTGRES_PASSWORD: "${DB_VACACIONES_PASSWORD}" }
+    volumes: ["vol-vacaciones:/var/lib/postgresql/data", "./vacaciones/init.sql:/docker-entrypoint-initdb.d/01-init.sql:ro"]
+    networks: [vacaciones-db]
+    healthcheck: *db-health
+
+  # Nueva (Reto 5): base exclusiva de cuentas. auth-service crea sus tablas al iniciar.
+  database-auth:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment: { POSTGRES_DB: "${DB_AUTH_NAME}", POSTGRES_USER: "${DB_AUTH_USER}", POSTGRES_PASSWORD: "${DB_AUTH_PASSWORD}" }
+    volumes: ["vol-auth:/var/lib/postgresql/data"]
+    networks: [auth-db]
+    healthcheck: *db-health
+
+  # ---------------- Servicios reutilizados del Reto 4 ----------------
+  departamentos-service:
+    build: ../Reto_4/departamentos
+    restart: unless-stopped
+    environment: { PORT: 8082, DB_HOST: database-departamentos, DB_PORT: 5432, DB_NAME: "${DB_DEPARTAMENTOS_NAME}", DB_USER: "${DB_DEPARTAMENTOS_USER}", DB_PASSWORD: "${DB_DEPARTAMENTOS_PASSWORD}" }
+    depends_on: { database-departamentos: { condition: service_healthy } }
+    expose: ["8082"]
+    networks: [microservices-network, departamentos-db]
+    healthcheck: { test: [CMD, node, -e, "fetch('http://127.0.0.1:8082/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"], interval: 5s, timeout: 3s, retries: 10, start_period: 10s }
+
+  empleados-service:
+    build: { context: "..", dockerfile: Reto_4/empleados/Dockerfile }
+    restart: unless-stopped
+    environment:
+      DB_HOST: database-empleados
+      DB_PORT: 5432
+      DB_NAME: ${DB_EMPLEADOS_NAME}
+      DB_USER: ${DB_EMPLEADOS_USER}
+      DB_PASSWORD: ${DB_EMPLEADOS_PASSWORD}
+      DEPARTAMENTOS_SERVICE_URL: http://departamentos-service:8082
+      DEPARTAMENTOS_TIMEOUT_SECONDS: ${DEPARTAMENTOS_TIMEOUT_SECONDS:-2}
+      DEPARTAMENTOS_MAX_RETRIES: ${DEPARTAMENTOS_MAX_RETRIES:-3}
+      DEPARTAMENTOS_BACKOFF_SECONDS: ${DEPARTAMENTOS_BACKOFF_SECONDS:-1}
+      DEPARTAMENTOS_CB_FAIL_MAX: ${DEPARTAMENTOS_CB_FAIL_MAX:-3}
+      DEPARTAMENTOS_CB_RESET_TIMEOUT_SECONDS: ${DEPARTAMENTOS_CB_RESET_TIMEOUT_SECONDS:-30}
+      PENDIENTES_RECONCILIATION_INTERVAL_SECONDS: ${PENDIENTES_RECONCILIATION_INTERVAL_SECONDS:-15}
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_USER: ${RABBITMQ_USER}
+      RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD}
+    depends_on: { database-empleados: { condition: service_healthy }, departamentos-service: { condition: service_healthy }, rabbitmq-setup: { condition: service_completed_successfully } }
+    expose: ["8081"]
+    networks: [microservices-network, empleados-db]
+    healthcheck: { test: [CMD, python, -c, "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8081/health',timeout=2)"], interval: 5s, timeout: 3s, retries: 10, start_period: 10s }
+
+  perfiles-service:
+    build: ../Reto_4/perfiles
+    restart: unless-stopped
+    environment: { DB_HOST: database-perfiles, DB_PORT: 5432, DB_NAME: "${DB_PERFILES_NAME}", DB_USER: "${DB_PERFILES_USER}", DB_PASSWORD: "${DB_PERFILES_PASSWORD}", RABBITMQ_HOST: rabbitmq, RABBITMQ_USER: "${RABBITMQ_USER}", RABBITMQ_PASSWORD: "${RABBITMQ_PASSWORD}" }
+    depends_on: { database-perfiles: { condition: service_healthy }, rabbitmq-setup: { condition: service_completed_successfully } }
+    expose: ["8083"]
+    networks: [microservices-network, perfiles-db]
+    healthcheck: { test: [CMD, wget, -qO-, "http://127.0.0.1:8083/health"], interval: 5s, timeout: 3s, retries: 10, start_period: 10s }
+
+  # ---------------- Servicios del Reto 5 ----------------
+  notificaciones-service:
+    build: ./notificaciones
+    restart: unless-stopped
+    environment: { DB_HOST: database-notificaciones, DB_PORT: 5432, DB_NAME: "${DB_NOTIFICACIONES_NAME}", DB_USER: "${DB_NOTIFICACIONES_USER}", DB_PASSWORD: "${DB_NOTIFICACIONES_PASSWORD}", RABBITMQ_HOST: rabbitmq, RABBITMQ_USER: "${RABBITMQ_USER}", RABBITMQ_PASSWORD: "${RABBITMQ_PASSWORD}" }
+    depends_on: { database-notificaciones: { condition: service_healthy }, rabbitmq-setup: { condition: service_completed_successfully } }
+    expose: ["8084"]
+    networks: [microservices-network, notificaciones-db]
+    healthcheck: { test: [CMD, wget, -qO-, "http://127.0.0.1:8084/health"], interval: 5s, timeout: 3s, retries: 15, start_period: 25s }
+
+  vacaciones-service:
+    build: ./vacaciones
+    restart: unless-stopped
+    environment:
+      DB_HOST: database-vacaciones
+      DB_PORT: 5432
+      DB_NAME: ${DB_VACACIONES_NAME}
+      DB_USER: ${DB_VACACIONES_USER}
+      DB_PASSWORD: ${DB_VACACIONES_PASSWORD}
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_USER: ${RABBITMQ_USER}
+      RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD}
+      VACACIONES_SCHEDULER_INTERVAL_SECONDS: ${VACACIONES_SCHEDULER_INTERVAL_SECONDS:-60}
+    depends_on: { database-vacaciones: { condition: service_healthy }, rabbitmq-setup: { condition: service_completed_successfully } }
+    expose: ["8085"]
+    networks: [microservices-network, vacaciones-db]
+    healthcheck: { test: [CMD, curl, --fail, --silent, "http://127.0.0.1:8085/health"], interval: 5s, timeout: 3s, retries: 15, start_period: 20s }
+
+  # Nuevo (Reto 5): proveedor de identidad. Puerto 8086 porque 8085 ya es de vacaciones.
+  auth-service:
+    build: { context: ., dockerfile: auth/Dockerfile }
+    restart: unless-stopped
+    environment:
+      JWT_SECRET: ${JWT_SECRET:?Configure JWT_SECRET en .env}
+      JWT_ACCESS_TTL_SECONDS: ${JWT_ACCESS_TTL_SECONDS:-900}
+      JWT_RESET_TTL_SECONDS: ${JWT_RESET_TTL_SECONDS:-1800}
+      ADMIN_EMPLOYEE_ID: ${ADMIN_EMPLOYEE_ID:?Configure ADMIN_EMPLOYEE_ID en .env}
+      ADMIN_EMAIL: ${ADMIN_EMAIL:?Configure ADMIN_EMAIL en .env}
+      ADMIN_PASSWORD_HASH: ${ADMIN_PASSWORD_HASH:?Configure ADMIN_PASSWORD_HASH en .env}
+      DB_HOST: database-auth
+      DB_PORT: 5432
+      DB_NAME: ${DB_AUTH_NAME}
+      DB_USER: ${DB_AUTH_USER}
+      DB_PASSWORD: ${DB_AUTH_PASSWORD}
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_USER: ${RABBITMQ_USER}
+      RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD}
+    depends_on: { database-auth: { condition: service_healthy }, rabbitmq-setup: { condition: service_completed_successfully } }
+    expose: ["8086"]
+    networks: [microservices-network, auth-db]
+    healthcheck: { test: [CMD, python, -c, "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8086/health',timeout=2)"], interval: 5s, timeout: 3s, retries: 10, start_period: 10s }
+
+  # Único punto de entrada: valida el JWT (firma HS256, expiración, rol y propiedad) y enruta
+  api-gateway:
+    build: { context: ., dockerfile: api-gateway/Dockerfile }
+    restart: unless-stopped
+    environment:
+      JWT_SECRET: ${JWT_SECRET:?Configure JWT_SECRET en .env}
+      AUTH_URL: http://auth-service:8086
+      EMPLEADOS_URL: http://empleados-service:8081
+      DEPARTAMENTOS_URL: http://departamentos-service:8082
+      PERFILES_URL: http://perfiles-service:8083
+      NOTIFICACIONES_URL: http://notificaciones-service:8084
+      VACACIONES_URL: http://vacaciones-service:8085
+      GATEWAY_REQUEST_TIMEOUT_SECONDS: ${GATEWAY_REQUEST_TIMEOUT_SECONDS:-20}
+    depends_on:
+      auth-service: { condition: service_healthy }
+      empleados-service: { condition: service_healthy }
+      departamentos-service: { condition: service_healthy }
+      perfiles-service: { condition: service_healthy }
+      notificaciones-service: { condition: service_healthy }
+      vacaciones-service: { condition: service_healthy }
+    ports: ["127.0.0.1:${GATEWAY_PORT:-8080}:8080"]
+    networks: [microservices-network]
+    healthcheck: { test: [CMD, python, -c, "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/health',timeout=2)"], interval: 5s, timeout: 3s, retries: 10, start_period: 10s }
+
+networks:
+  microservices-network: { driver: bridge }
+  empleados-db: { internal: true }
+  departamentos-db: { internal: true }
+  perfiles-db: { internal: true }
+  notificaciones-db: { internal: true }
+  vacaciones-db: { internal: true }
+  auth-db: { internal: true }
+
+volumes:
+  rabbitmq-data:
+  vol-empleados:
+  vol-departamentos:
+  vol-perfiles:
+  vol-notificaciones:
+  vol-vacaciones:
+  vol-auth:

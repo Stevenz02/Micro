@@ -36,6 +36,10 @@ app.MapGet("/health", async (NpgsqlDataSource db) => {
 });
 
 app.MapPost("/vacaciones", async (VacacionRequest request, VacacionesRepository repo, RabbitPublisher publisher, ILogger<Program> logger) => {
+    if (string.IsNullOrWhiteSpace(request.Id)) {
+        var generatedId = $"V-{DateTime.UtcNow:yyyy}-{Guid.NewGuid().ToString("N")[..6].ToUpperInvariant()}";
+        request = request with { Id = generatedId };
+    }
     var dateError = VacationRules.ValidateDates(request.FechaInicio, request.FechaFin, DateOnly.FromDateTime(DateTime.UtcNow));
     if (dateError is not null) return Results.BadRequest(new { detail = dateError });
     var employee = await repo.GetEmployee(request.EmpleadoId);
@@ -48,7 +52,7 @@ app.MapPost("/vacaciones", async (VacacionRequest request, VacacionesRepository 
         var created = await repo.Create(request);
         try { publisher.PublishScheduled(created, employee.Email); }
         catch (Exception exception) { logger.LogError(exception, "No se pudo publicar vacaciones.programadas para {Id} tras commit de BD", created.Id); }
-        return Results.Created($"/vacaciones/{request.Id}", created);
+        return Results.Created($"/vacaciones/{created.Id}", created);
     }
     catch (PostgresException ex) when (ex.SqlState == PostgresErrorCodes.UniqueViolation) { return Results.BadRequest(new { detail = $"La vacacion {request.Id} ya existe" }); }
 }).Produces<Vacacion>(201).Produces(400);
@@ -67,7 +71,7 @@ app.MapDelete("/vacaciones/{id}", async (string id, VacacionesRepository repo) =
 
 app.Run();
 
-public record VacacionRequest(string Id, string EmpleadoId, DateOnly FechaInicio, DateOnly FechaFin);
+public record VacacionRequest(string? Id, string EmpleadoId, DateOnly FechaInicio, DateOnly FechaFin);
 public record Vacacion(string Id, string EmpleadoId, DateOnly FechaInicio, DateOnly FechaFin, string Estado, DateTimeOffset FechaCreacion);
 public record EmpleadoReplica(string Estado, string? Email);
 

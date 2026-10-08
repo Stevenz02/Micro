@@ -1,0 +1,207 @@
+################################################################################
+#  RETO 5 - Comandos de sustentación (Windows PowerShell 5.1)
+#  Copiar y pegar por bloques. Ejecutar desde C:\Users\Steven\Documents\Micro\Reto_5
+################################################################################
+
+# ------------------------------------------------------------------------------
+# 0. ARRANQUE LIMPIO
+# ------------------------------------------------------------------------------
+cd C:\Users\Steven\Documents\Micro\Reto_4 ; docker compose down
+cd C:\Users\Steven\Documents\Micro\Reto_5
+if (-not (Test-Path .env)) { Copy-Item .env.example .env }
+docker compose down -v
+docker compose up --build -d --wait --wait-timeout 300
+docker compose ps
+
+# ------------------------------------------------------------------------------
+# 0.1 FUNCIONES DE AYUDA (pegar una vez por consola)
+#     Api devuelve Status + Body sin lanzar excepción en 4xx/5xx (PS 5.1)
+# ------------------------------------------------------------------------------
+$GW = "http://localhost:8080"
+function Api {
+  param([string]$Method, [string]$Path, [string]$Token, $Body)
+  $h = @{}
+  if ($Token) { $h.Authorization = "Bearer $Token" }
+  $p = @{ Method = $Method; Uri = "$GW$Path"; Headers = $h; UseBasicParsing = $true; ContentType = 'application/json; charset=utf-8' }
+  if ($null -ne $Body) { $p.Body = [Text.Encoding]::UTF8.GetBytes(($Body | ConvertTo-Json -Depth 5)) }
+  try {
+    $r = Invoke-WebRequest @p
+    $b = if ($r.Content) { $r.Content | ConvertFrom-Json } else { $null }
+    [pscustomobject]@{ Status = [int]$r.StatusCode; Body = $b }
+  } catch {
+    $resp = $_.Exception.Response
+    if (-not $resp) { throw }
+    $txt = (New-Object IO.StreamReader($resp.GetResponseStream())).ReadToEnd()
+    [pscustomobject]@{ Status = [int]$resp.StatusCode; Body = $txt }
+  }
+}
+function Login($email, $pass) { Api POST /auth/login -Body @{ email = $email; password = $pass } }
+# Último token SEGURIDAD (activación o recuperación) enviado a un correo. Lo consulta el ADMIN.
+function TokenSeguridad($correo) {
+  $todas = (Api GET /notificaciones -Token $ADMIN).Body
+  $n = $todas | Where-Object { $_.tipo -eq 'SEGURIDAD' -and $_.destinatario -eq $correo } | Select-Object -Last 1
+  "Notificacion: $($n.id) -> $($n.mensaje)" | Write-Host
+  (Api GET "/notificaciones/seguridad/$($n.id)/token" -Token $ADMIN).Body.token
+}
+# ¡OJO! vacaciones-service usa la fecha UTC. Después de las 7 p. m. en Bogotá ya es "mañana" en UTC.
+$HOY = (Get-Date).ToUniversalTime().ToString('yyyy-MM-dd')
+$HOY
+
+# ------------------------------------------------------------------------------
+# 1. LOGIN DEL ADMIN SEMILLA (creado por variables de entorno al arrancar auth-service)
+# ------------------------------------------------------------------------------
+$r = Login 'admin@empresa.com' 'AdminRrhh2026' ; $r.Status
+$ADMIN = $r.Body.access_token ; $ADMIN
+# Decodificar el payload para mostrar los claims (sub, role, iat, exp, type, iss)
+$seg = $ADMIN.Split('.')[1].Replace('-','+').Replace('_','/') ; $seg += '=' * ((4 - $seg.Length % 4) % 4)
+[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($seg))
+
+# ------------------------------------------------------------------------------
+# 2. ONBOARDING: departamento + empleados E001 y E002 (como ADMIN)
+# ------------------------------------------------------------------------------
+(Api POST /departamentos -Token $ADMIN -Body @{ id = 'IT'; nombre = 'Tecnologia'; descripcion = 'Area de tecnologia' }).Status
+(Api POST /empleados -Token $ADMIN -Body @{ id = 'E001'; nombre = 'Juan'; apellido = 'Perez'; email = 'juan.perez@empresa.com'; numeroEmpleado = 'EMP-2026-001'; cargo = 'Desarrollador'; area = 'Tecnologia'; departamentoId = 'IT'; fechaIngreso = '2026-02-10'; estado = 'ACTIVO' }).Status
+(Api POST /empleados -Token $ADMIN -Body @{ id = 'E002'; nombre = 'Ana'; apellido = 'Gomez'; email = 'ana.gomez@empresa.com'; numeroEmpleado = 'EMP-2026-002'; cargo = 'Analista'; area = 'Tecnologia'; departamentoId = 'IT'; fechaIngreso = '2026-03-01'; estado = 'ACTIVO' }).Status
+
+# ------------------------------------------------------------------------------
+# 3. VERIFICAR EVENTOS: empleado.creado -> auth crea cuenta INACTIVA -> usuario.creado -> notificación SEGURIDAD
+# ------------------------------------------------------------------------------
+docker compose logs auth-service --since 5m | Select-String "evento_procesado|Consumidor"
+docker compose logs notificaciones-service --since 5m | Select-String "usuario.creado"
+docker compose exec database-auth psql -U auth_user -d auth_db -c "SELECT employee_id,email,role,status,credential_version FROM cuentas ORDER BY employee_id;"
+(Api GET /notificaciones/E001 -Token $ADMIN).Body | Format-Table tipo,destinatario,mensaje -AutoSize
+
+# ------------------------------------------------------------------------------
+# 4. PETICIÓN DENEGADA (401): sin token y con token alterado
+# ------------------------------------------------------------------------------
+(Api GET /empleados).Status                                   # 401 sin token
+$ALTERADO = $ADMIN.Substring(0, $ADMIN.Length - 2) + 'xx'
+(Api GET /empleados -Token $ALTERADO).Status                  # 401 firma inválida
+
+# ------------------------------------------------------------------------------
+# 5. ESTABLECER CONTRASEÑA con el token de activación (usuario.creado)
+# ------------------------------------------------------------------------------
+# El "correo" simulado con el token sale en el log de notificaciones:
+docker compose logs notificaciones-service | Select-String "NOTIFICACI.N\] Tipo: SEGURIDAD"
+# (Para no copiar a mano, TokenSeguridad obtiene el mismo token por el endpoint ADMIN)
+$ACT1 = TokenSeguridad 'juan.perez@empresa.com' ; $ACT1
+(Api POST /auth/reset-password -Body @{ token = $ACT1; newPassword = 'JuanPerez2026' }).Status     # 200
+(Api POST /auth/reset-password -Body @{ token = $ACT1; newPassword = 'OtraClave2026' }).Status     # 400: token ya usado
+$ACT2 = TokenSeguridad 'ana.gomez@empresa.com'
+(Api POST /auth/reset-password -Body @{ token = $ACT2; newPassword = 'AnaGomez20266' }).Status     # 200 (se usa en el paso 15)
+docker compose logs notificaciones-service --since 2m | Select-String "cuenta.activada"
+
+# ------------------------------------------------------------------------------
+# 6-7. LOGIN USER Y LECTURA EXITOSA (200)
+# ------------------------------------------------------------------------------
+$r = Login 'juan.perez@empresa.com' 'JuanPerez2026' ; $r.Status
+$E001 = $r.Body.access_token
+(Api GET /empleados -Token $E001).Status                      # 200
+
+# ------------------------------------------------------------------------------
+# 8. RECUPERACIÓN DE CONTRASEÑA (usuario.recuperacion)
+# ------------------------------------------------------------------------------
+(Api POST /auth/recover-password -Body @{ email = 'juan.perez@empresa.com' }).Body
+(Api POST /auth/recover-password -Body @{ email = 'noexiste@empresa.com' }).Body   # misma respuesta: no revela si existe
+docker compose logs notificaciones-service --since 2m | Select-String "usuario.recuperacion"
+$REC = TokenSeguridad 'juan.perez@empresa.com' ; $REC
+(Api POST /auth/reset-password -Body @{ token = $REC; newPassword = 'JuanRecupera2026' }).Status  # 200
+(Login 'juan.perez@empresa.com' 'JuanPerez2026').Status        # 401 contraseña anterior
+$r = Login 'juan.perez@empresa.com' 'JuanRecupera2026' ; $r.Status   # 200
+$E001 = $r.Body.access_token
+
+# ------------------------------------------------------------------------------
+# 9. ESCRITURA DENEGADA (403) con rol USER
+# ------------------------------------------------------------------------------
+(Api DELETE '/empleados/E001?motivo=RENUNCIA' -Token $E001).Status    # 403
+(Api POST /departamentos -Token $E001 -Body @{ id = 'HR'; nombre = 'RRHH'; descripcion = 'x' }).Status   # 403
+
+# ------------------------------------------------------------------------------
+# 10. PROPIEDAD DEL RECURSO: su perfil 200, perfil ajeno 403
+# ------------------------------------------------------------------------------
+(Api PUT /perfiles/E001 -Token $E001 -Body @{ telefono = '3001234567'; direccion = 'Calle 1 # 2-3'; ciudad = 'Armenia'; biografia = 'Desarrollador' }).Status   # 200
+(Api PUT /perfiles/E002 -Token $E001 -Body @{ telefono = '0'; direccion = 'x'; ciudad = 'x'; biografia = 'x' }).Status                                         # 403
+
+# ------------------------------------------------------------------------------
+# 11. CAMBIO DE CONTRASEÑA (USER autenticado)
+# ------------------------------------------------------------------------------
+(Api POST /auth/change-password -Token $E001 -Body @{ currentPassword = 'JuanRecupera2026'; newPassword = 'JuanNueva20266' }).Status   # 200
+(Login 'juan.perez@empresa.com' 'JuanRecupera2026').Status     # 401
+(Login 'juan.perez@empresa.com' 'JuanNueva20266').Status       # 200
+
+# ------------------------------------------------------------------------------
+# 12-14. VACACIONES DE E001 (el scheduler corre cada 60 s; Esperar consulta cada 3 s)
+# ------------------------------------------------------------------------------
+function Esperar($id, $estado) {
+  $t = 0
+  do {
+    Start-Sleep 3; $t += 3
+    $e = (Api GET "/vacaciones/$id" -Token $ADMIN).Body.estado
+    Write-Host "  [$t s] estado = $e"
+  } until ($e -eq $estado -or $t -ge 180)
+}
+
+# Paso 12: programar (201)
+$v = Api POST /vacaciones -Token $ADMIN -Body @{ empleadoId='E001'; fechaInicio=$HOY; fechaFin=$HOY }
+"Programar vacaciones: $($v.Status)"
+$v.Body
+$VID = $v.Body.id
+
+# Paso 13: inicia -> SUSPENDIDA_TEMPORAL -> login 401
+Esperar $VID 'EN_CURSO'
+Start-Sleep 2
+docker compose logs auth-service --since 3m | Select-String "vacaciones.iniciadas"
+docker compose logs notificaciones-service --since 3m | Select-String "vacaciones.iniciadas|cuenta.desactivada"
+docker compose exec database-auth psql -U auth_user -d auth_db -c "SELECT employee_id,status FROM cuentas WHERE employee_id='E001';"
+"Login E001 en vacaciones: " + (Login 'juan.perez@empresa.com' 'JuanNueva20266').Status
+
+# Paso 14: finaliza -> ACTIVA -> login 200
+Esperar $VID 'FINALIZADA'
+Start-Sleep 2
+docker compose logs auth-service --since 3m | Select-String "vacaciones.finalizadas"
+docker compose logs notificaciones-service --since 3m | Select-String "vacaciones.finalizadas|cuenta.activada"
+docker compose exec database-auth psql -U auth_user -d auth_db -c "SELECT employee_id,status FROM cuentas WHERE employee_id='E001';"
+"Login E001 despues de vacaciones: " + (Login 'juan.perez@empresa.com' 'JuanNueva20266').Status
+(Api GET /notificaciones/E001 -Token $ADMIN).Body | Format-Table tipo,mensaje -AutoSize
+
+# ------------------------------------------------------------------------------
+# 15. CASO BORDE: E002 retirado DURANTE sus vacaciones -> NO se reactiva
+#     El DELETE se ejecuta apenas Esperar detecta EN_CURSO (antes del siguiente ciclo)
+# ------------------------------------------------------------------------------
+"Login E002 antes de vacaciones: " + (Login 'ana.gomez@empresa.com' 'AnaGomez20266').Status
+$v2 = Api POST /vacaciones -Token $ADMIN -Body @{ empleadoId='E002'; fechaInicio=$HOY; fechaFin=$HOY }
+"Programar vacaciones E002: $($v2.Status)"
+$VID2 = $v2.Body.id
+Esperar $VID2 'EN_CURSO'
+"Retirar E002 estando de vacaciones: " + (Api DELETE '/empleados/E002?motivo=RENUNCIA' -Token $ADMIN).Status
+Start-Sleep 2
+docker compose exec database-auth psql -U auth_user -d auth_db -c "SELECT employee_id,status FROM cuentas WHERE employee_id='E002';"
+Esperar $VID2 'FINALIZADA'
+Start-Sleep 2
+docker compose logs auth-service --since 4m | Select-String "vacaciones.finalizadas|evento_duplicado_o_sin_cambio|empleado.retirado"
+docker compose exec database-auth psql -U auth_user -d auth_db -c "SELECT employee_id,status FROM cuentas WHERE employee_id='E002';"   # DESACTIVADA_PERMANENTE
+(Api GET /notificaciones/E002 -Token $ADMIN).Body | Format-Table tipo,mensaje -AutoSize   # NO aparece "Cuenta activada: FIN_VACACIONES"
+"Login E002 despues de fin de vacaciones: " + (Login 'ana.gomez@empresa.com' 'AnaGomez20266').Status   # 401
+
+# ------------------------------------------------------------------------------
+# 16. OFFBOARDING de E001 (ADMIN)
+# ------------------------------------------------------------------------------
+$d = Api DELETE '/empleados/E001?motivo=RENUNCIA' -Token $ADMIN ; $d.Status ; $d.Body
+docker compose logs notificaciones-service --since 2m | Select-String "cuenta.desactivada|empleado.retirado"
+
+# ------------------------------------------------------------------------------
+# 17. LOGIN DEL RETIRADO FALLA
+# ------------------------------------------------------------------------------
+(Login 'juan.perez@empresa.com' 'JuanNueva20266').Status        # 401
+
+# ------------------------------------------------------------------------------
+# 18. AUDITORÍA
+# ------------------------------------------------------------------------------
+(Api GET '/empleados?estado=RETIRADO' -Token $ADMIN).Body | Format-Table id,email,estado,fechaRetiro -AutoSize
+
+# ------------------------------------------------------------------------------
+# EXTRA: topología en RabbitMQ (http://localhost:15672  rrhh / rrhh_local_demo)
+#        Queues -> auth.events debe tener 1 consumidor y 4 bindings.
+#        Swagger con BearerAuth: http://localhost:8080/docs  (botón Authorize -> pegar $ADMIN)
+#        También /auth/docs, /empleados/docs, /perfiles/docs, /notificaciones/docs, /vacaciones/docs
+# ------------------------------------------------------------------------------

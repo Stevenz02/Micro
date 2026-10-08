@@ -12,7 +12,7 @@ y agrega nuevos conceptos sin reemplazar los retos anteriores.
 | [Reto 2](Reto_2/README.md) | Orquestacion de servicios y persistencia de datos | Completado y verificado; [evidencia](Reto_2/VERIFICACION.md) |
 | [Reto 3](Reto_3/README.md) | API Gateway y resiliencia | Completado y verificado con Docker Compose: punto de entrada unico, Circuit Breaker probado en runtime (ver seccion 18 del README del reto) |
 | [Reto 4](Reto_4/HANDOFF_RETO4.md) | Eventos RabbitMQ, perfiles, notificaciones y vacaciones | Logica y despliegue verificados segun el handoff tecnico del reto |
-| [Reto 5](Reto_5/README.md) | JWT, eventos y control de acceso | Logica de Auth, Gateway, Notificaciones y scheduler probada localmente; Docker y flujo integrado pendientes |
+| [Reto 5](Reto_5/README.md) | JWT, RBAC, ciclo de vida de cuentas por eventos y scheduler | Completado y verificado con Docker Compose: 18 pasos del flujo integrado, incluido el caso borde de retiro durante vacaciones |
 
 ## Estructura general
 
@@ -47,7 +47,7 @@ Micro/
 |   +-- VERIFICACION.md
 |   +-- README.md
 +-- Reto_4/                   # Eventos de RR. HH. con RabbitMQ
-+-- Reto_5/                   # Codigo de seguridad y guia de integracion
++-- Reto_5/                   # auth-service, Gateway con JWT/RBAC y scheduler, con Docker Compose
 ```
 
 Reto 2 importa el modelo de `Reto_1/app/models.py` y lo incorpora en su imagen
@@ -115,9 +115,20 @@ Los ejemplos de solicitudes, Swagger, pruebas y gestion de volumenes estan en el
 README de cada reto. No hay un Compose en la raiz; los retos 2, 3 y 4 tienen
 configuraciones de ejecucion independientes.
 
-Reto 5 todavia no tiene configuracion Docker. Su estado y pruebas locales se
-describen en [Reto_5/README.md](Reto_5/README.md). Los contratos de eventos se
-verificaron con el Catálogo oficial de Eventos; falta probarlos entre servicios.
+Reto 5:
+
+```powershell
+Set-Location C:\Users\Steven\Documents\Micro\Reto_5
+if (!(Test-Path .env)) { Copy-Item .env.example .env }
+docker compose up --build -d --wait --wait-timeout 300
+# Login del admin semilla (credenciales academicas en .env.example)
+$t = (Invoke-RestMethod -Method Post http://localhost:8080/auth/login -ContentType 'application/json' -Body '{"email":"admin@empresa.com","password":"AdminRrhh2026"}').access_token
+Invoke-RestMethod http://localhost:8080/empleados -Headers @{ Authorization = "Bearer $t" }
+docker compose down
+```
+
+El flujo completo de 18 pasos y su evidencia estan en
+[Reto_5/README.md](Reto_5/README.md) y `Reto_5/comandos_sustentacion_reto5.txt`.
 
 ## Tecnologias utilizadas
 

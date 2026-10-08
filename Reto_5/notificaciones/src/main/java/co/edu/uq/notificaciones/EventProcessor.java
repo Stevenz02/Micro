@@ -68,6 +68,7 @@ public class EventProcessor {
         String message;
         String deliveryToken = null;
         OffsetDateTime expiresAt = null;
+        String emailText = null; // texto del correo simulado que se imprime en el log
 
         switch (type) {
             case "empleado.creado" -> {
@@ -117,12 +118,16 @@ public class EventProcessor {
                 expiresAt = utc(required(data, "expiraEn"));
                 notificationType = "SEGURIDAD";
                 message = "Cuenta creada: establezca su contraseña con el token de activación";
+                emailText = "Para establecer o restablecer su contraseña use el token: " + deliveryToken
+                    + " (vence " + expiresAt + ")";
             }
             case "usuario.recuperacion" -> {
                 deliveryToken = required(data, "tokenRecuperacion");
                 expiresAt = utc(required(data, "expiraEn"));
                 notificationType = "SEGURIDAD";
                 message = "Recuperación solicitada: restablezca su contraseña con el token de recuperación";
+                emailText = "Para establecer o restablecer su contraseña use el token: " + deliveryToken
+                    + " (vence " + expiresAt + ")";
             }
             case "cuenta.activada" -> {
                 employeeId = required(data, "empleadoId");
@@ -131,6 +136,9 @@ public class EventProcessor {
                     throw new IllegalArgumentException("Motivo de activación inválido");
                 notificationType = "CUENTA";
                 message = "Cuenta activada: " + reason;
+                emailText = reason.equals("FIN_VACACIONES")
+                    ? "Bienvenido de regreso. Su cuenta fue reactivada al finalizar sus vacaciones."
+                    : "Su cuenta fue activada. Ya puede iniciar sesión.";
             }
             case "cuenta.desactivada" -> {
                 employeeId = required(data, "empleadoId");
@@ -141,6 +149,9 @@ public class EventProcessor {
                     throw new IllegalArgumentException("Motivo o permanencia inválidos");
                 notificationType = "CUENTA";
                 message = "Cuenta desactivada: " + reason;
+                emailText = reason.equals("RETIRO")
+                    ? "Su cuenta fue desactivada de forma permanente por retiro."
+                    : "Su cuenta fue desactivada temporalmente durante sus vacaciones.";
             }
             default -> throw new IllegalArgumentException("Tipo de evento no soportado");
         }
@@ -153,6 +164,10 @@ public class EventProcessor {
         jdbc.update("INSERT INTO notificaciones(id,tipo,destinatario,mensaje,empleado_id,token_entrega,token_expira_en) "
                 + "VALUES(?,?,?,?,?,?,?)", id, notificationType, email, message, employeeId, deliveryToken, expiresAt);
         log.info("evento_procesado id={} type={}", id, type);
+        // Simulación del envío de correo (Reto 5). En producción sería un email con un link
+        // del estilo https://app.empresa.com/reset?token=...; aquí el token queda en el log solo con fines académicos.
+        log.info("[NOTIFICACIÓN] Tipo: {} | Para: {} | Mensaje: \"{}\"", notificationType, email,
+            emailText != null ? emailText : message);
         return true;
     }
 }
