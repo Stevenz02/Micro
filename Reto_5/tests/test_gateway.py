@@ -80,6 +80,8 @@ def test_gateway_removes_client_identity_headers_and_adds_validated_identity():
     issue_access("another-test-secret-with-32-bytes", "E001", "USER", 900),
     jwt.encode({"iss": "rrhh-auth-service", "sub": "E001", "type": "ACCESS", "role": "USER", "iat": 1, "exp": 2}, SECRET, algorithm="HS256"),
     jwt.encode({"iss": "rrhh-auth-service", "sub": "E001", "type": "ACCESS", "role": "USER", "iat": 1, "exp": 9999999999}, SECRET, algorithm="HS384"),
+    jwt.encode({"iss": "otro-emisor", "sub": "E001", "type": "ACCESS", "role": "USER", "iat": 1, "exp": 9999999999}, SECRET, algorithm="HS256"),
+    jwt.encode({"iss": "rrhh-auth-service", "sub": "E001", "type": "ACCESS", "role": "GUEST", "iat": 1, "exp": 9999999999}, SECRET, algorithm="HS256"),
 ])
 def test_invalid_tokens_get_401(token):
     with gateway(lambda request: httpx.Response(200)) as client:
@@ -94,6 +96,9 @@ def test_gateway_openapi_declares_bearer_for_protected_operations():
     assert "security" not in schema["paths"]["/health"]["get"]
     assert "security" not in schema["paths"]["/auth/login"]["post"]
     assert schema["paths"]["/auth/change-password"]["post"]["security"] == [{"BearerAuth": []}]
+    assert schema["paths"]["/auth/login"]["post"]["requestBody"]["content"]["application/json"]["schema"]["required"] == ["email", "password"]
+    assert "200" in schema["paths"]["/auth/login"]["post"]["responses"]
+    assert "400" in schema["paths"]["/auth/reset-password"]["post"]["responses"]
 
 
 def test_upstream_openapi_is_documented_with_bearer_at_gateway():
@@ -109,3 +114,15 @@ def test_upstream_openapi_is_documented_with_bearer_at_gateway():
     assert schema["servers"] == [{"url": "/"}]
     assert schema["paths"]["/empleados"]["get"]["security"] == [{"BearerAuth": []}]
     assert "security" not in schema["paths"]["/health"]["get"]
+
+
+def test_departamentos_docs_use_real_upstream_openapi_path():
+    def handler(request):
+        assert request.url.path == "/openapi.json"
+        return httpx.Response(200, json={"openapi": "3.0.3", "paths": {
+            "/departamentos": {"get": {"responses": {"200": {"description": "OK"}}}},
+        }})
+    with gateway(handler) as client:
+        assert client.get("/departamentos/docs").status_code == 200
+        schema = client.get("/departamentos/openapi.json").json()
+    assert schema["paths"]["/departamentos"]["get"]["security"] == [{"BearerAuth": []}]
