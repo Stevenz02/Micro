@@ -1,0 +1,276 @@
+################################################################################
+#  RETO 6 - AUTOMATIZACIÓN DE PRUEBAS - Guion de sustentación
+#  Windows PowerShell 5.1. Copiar y pegar por bloques, en UNA sola consola.
+#  Raíz del repo: C:\Users\Steven\Documents\Micro
+################################################################################
+
+# Para que tildes y ñ se vean bien en la consola:
+[Console]::OutputEncoding = [Text.Encoding]::UTF8
+
+
+################################################################################
+# 0. PREPARACIÓN (una sola vez, ANTES de la sustentación)
+################################################################################
+cd C:\Users\Steven\Documents\Micro
+git pull origin main
+
+# Entorno Python para las pruebas unitarias e integración (Python 3.12 o 3.13)
+python -m venv .venv
+.venv\Scripts\python.exe -m pip install -r Reto_4/requirements-test.txt -r Reto_5/requirements-test.txt -r Reto_6/e2e-tests/requirements.txt
+
+# .NET 8 SDK (para las pruebas de vacaciones). Verificar:
+dotnet --version
+# Si no está instalado, ver la alternativa con Docker en el bloque 2.4
+
+
+################################################################################
+# 1. LEVANTAR EL SISTEMA (Reto 5 apagado: comparten el puerto 8080)
+################################################################################
+cd C:\Users\Steven\Documents\Micro\Reto_5 ; docker compose down
+cd C:\Users\Steven\Documents\Micro\Reto_6
+if (-not (Test-Path .env)) { Copy-Item .env.example .env }
+docker compose down -v
+docker compose up --build -d --wait --wait-timeout 300
+docker compose ps
+# -> 14 contenedores healthy + rabbitmq-setup "Exited (0)". bdd-tests NO aparece:
+#    está en el perfil "tests" y solo corre cuando se invoca.
+
+
+################################################################################
+# 2. PUNTO 1 - PRUEBAS UNITARIAS, INTEGRACIÓN Y COBERTURA (base de la pirámide)
+#    No necesitan el sistema desplegado. Cada una: UN comando, código != 0 si falla.
+################################################################################
+cd C:\Users\Steven\Documents\Micro
+
+# 2.1 Empleados (Python/pytest) - unitarias con test doubles (repositorio falso,
+#     cliente de departamentos falso, publisher falso). Sin Docker ni PostgreSQL.
+powershell -NoProfile -ExecutionPolicy Bypass -File Reto_6/run_empleados.ps1 -Suite Unit ; "Codigo de salida: $LASTEXITCODE"
+#    -> 64 passed. Cobertura de reglas (main.py, models.py, events.py):
+$env:COVERAGE_FILE = "Reto_4\empleados\reports\.coverage" ; .venv\Scripts\python.exe -m coverage report ; Remove-Item Env:COVERAGE_FILE
+#    -> TOTAL ~79 %  (mínimo pedido: 70 %)
+
+# 2.2 Empleados - INTEGRACIÓN contra PostgreSQL 16 REAL (Testcontainers: crea un
+#     contenedor de Postgres, prueba persistencia + UNIQUE + retiro lógico, y lo destruye)
+powershell -NoProfile -ExecutionPolicy Bypass -File Reto_6/run_empleados.ps1 -Suite Integration ; "Codigo de salida: $LASTEXITCODE"
+#    (mientras corre, en Docker Desktop se ve aparecer y desaparecer un contenedor postgres)
+
+# 2.3 Auth y Gateway (Python/pytest)
+powershell -NoProfile -ExecutionPolicy Bypass -File Reto_6/run_auth.ps1 ; "Codigo de salida: $LASTEXITCODE"
+powershell -NoProfile -ExecutionPolicy Bypass -File Reto_6/run_gateway.ps1 ; "Codigo de salida: $LASTEXITCODE"
+#    -> Auth 10 passed (~86 %), Gateway 24 passed (~92 %)
+
+# 2.4 Vacaciones (.NET 8 / xUnit) - fechas, solapamiento (tabla de casos), días hábiles, scheduler
+powershell -NoProfile -ExecutionPolicy Bypass -File Reto_6/run_vacaciones.ps1 ; "Codigo de salida: $LASTEXITCODE"
+#    -> 16 pasaron. Alternativa SIN instalar .NET (usa el SDK en un contenedor):
+#    docker run --rm -v "${PWD}:/src" -w /src mcr.microsoft.com/dotnet/sdk:8.0 dotnet test Reto_5/vacaciones.tests/Vacaciones.Tests.csproj
+
+# 2.5 Mostrar la tabla de casos del solapamiento (lógica pura, ideal para unitarias)
+Get-Content Reto_5\vacaciones.tests\VacationRulesTests.cs
+#    InlineData: idéntico, contenido, contiene, toca el inicio, toca el fin -> true;
+#                totalmente antes / después -> false
+
+# 2.6 Reportes generados por cada suite (contrato con el Reto 7)
+Get-ChildItem Reto_4\empleados\reports, Reto_5\auth\reports, Reto_5\api-gateway\reports, Reto_5\vacaciones.tests\reports -Include *.xml,*.trx -Recurse | Select-Object FullName
+
+
+################################################################################
+# 3. "LAS PRUEBAS FALLAN CUANDO DEBEN" - romper una regla de negocio a propósito
+################################################################################
+cd C:\Users\Steven\Documents\Micro
+
+# 3.1 Auth: permitir que "vacaciones.finalizadas" reactive una cuenta RETIRADA (bug del caso borde)
+$f = (Resolve-Path 'Reto_5\auth\auth_app\repository.py').Path
+[IO.File]::WriteAllText($f, [IO.File]::ReadAllText($f).Replace('and status == SUSPENDED:', 'and status in {SUSPENDED, RETIRED}:'))
+powershell -NoProfile -ExecutionPolicy Bypass -File Reto_6/run_auth.ps1 ; "Codigo de salida: $LASTEXITCODE"
+#    -> FAILED test_catalog_vacation_retirement_sequence_never_reactivates_retired_account
+#       "assert not True" y Codigo de salida: 1  (señala EXACTAMENTE la regla rota)
+git checkout -- Reto_5/auth/auth_app/repository.py      # REVERTIR
+powershell -NoProfile -ExecutionPolicy Bypass -File Reto_6/run_auth.ps1 ; "Codigo de salida: $LASTEXITCODE"   # vuelve a 0
+
+# 3.2 Vacaciones: invertir el límite inclusivo del solapamiento (<= pasa a <)
+$f = (Resolve-Path 'Reto_5\vacaciones\Program.cs').Path
+[IO.File]::WriteAllText($f, [IO.File]::ReadAllText($f).Replace('newStart <= existingEnd && newEnd >= existingStart', 'newStart < existingEnd && newEnd > existingStart'))
+powershell -NoProfile -ExecutionPolicy Bypass -File Reto_6/run_vacaciones.ps1 ; "Codigo de salida: $LASTEXITCODE"
+#    -> falla InclusiveOverlapCases con (5,10,10,20) y (20,25,10,20): "Expected: True, Actual: False"
+git checkout -- Reto_5/vacaciones/Program.cs              # REVERTIR
+
+
+################################################################################
+# 4. PUNTOS 2 a 5 - SUITE BDD (Behave + Gherkin en español) CONTRA EL SISTEMA
+################################################################################
+cd C:\Users\Steven\Documents\Micro\Reto_6
+
+# 4.1 Estructura del proyecto independiente
+Get-ChildItem e2e-tests -Recurse -File -Exclude *.pyc | Where-Object { $_.FullName -notmatch 'reports|__pycache__' } | Select-Object @{n='Archivo';e={$_.FullName.Replace((Get-Location).Path+'\','')}}
+#    features/ (Gherkin) · step_definitions/ (pasos) · support/ (contexto, hooks, polling, datos) · requirements.txt
+
+# 4.2 Mostrar los escenarios (documentación viva)
+Get-Content e2e-tests\features\smoke.feature
+Get-Content e2e-tests\features\seguridad.feature
+Get-Content e2e-tests\features\onboarding.feature
+Get-Content e2e-tests\features\vacaciones.feature
+Get-Content e2e-tests\features\offboarding.feature
+
+# 4.3 Correr UNA característica a la vez (para explicarlas por separado)
+docker compose run --rm --build bdd-tests python run.py features/smoke.feature        # Punto 2: humo
+docker compose run --rm bdd-tests python run.py features/seguridad.feature            # Punto 3: 401/403, USER vs ADMIN
+docker compose run --rm bdd-tests python run.py features/onboarding.feature           # Punto 4: alta + polling
+docker compose run --rm bdd-tests python run.py features/vacaciones.feature           # Punto 5: rechazos + ciclo suspensión/reactivación
+docker compose run --rm bdd-tests python run.py features/offboarding.feature          # Punto 5: retiro, login bloqueado, auditoría, caso borde
+# Un solo escenario por nombre:
+docker compose run --rm bdd-tests python run.py -n "El inicio suspende el login y el fin lo restablece"
+
+# 4.4 Ver cómo el sistema reacciona mientras corre (OPCIONAL, en otra consola)
+#   cd C:\Users\Steven\Documents\Micro\Reto_6 ; docker compose logs -f vacaciones-service auth-service notificaciones-service
+
+
+################################################################################
+# 5. PUNTO 6 - SUITE COMPLETA, REPORTES Y CONSISTENCIA
+################################################################################
+cd C:\Users\Steven\Documents\Micro\Reto_6
+
+# 5.1 Suite completa con UN comando (3 veces seguidas para demostrar que no hay flaky tests)
+docker compose run --rm bdd-tests ; "Codigo de salida: $LASTEXITCODE"
+docker compose run --rm bdd-tests ; "Codigo de salida: $LASTEXITCODE"
+docker compose run --rm bdd-tests ; "Codigo de salida: $LASTEXITCODE"
+#    -> 5 features / 25 scenarios / 116 steps passed, ~40 s, Codigo de salida: 0
+
+# 5.2 Los 3 reportes quedaron en el host (volumen ./e2e-tests/reports:/app/reports)
+Get-ChildItem e2e-tests\reports
+start e2e-tests\reports\cucumber.html                      # navegable, por característica y paso
+([xml](Get-Content e2e-tests\reports\junit.xml)).testsuites | Select-Object tests, failures, errors, skipped
+#    -> tests=25 failures=0: coincide con los 25 escenarios del HTML
+
+# 5.3 Simular un fallo: cambiar el código esperado del escenario de humo (200 -> 201)
+$f = (Resolve-Path 'e2e-tests\features\smoke.feature').Path
+[IO.File]::WriteAllText($f, [IO.File]::ReadAllText($f).Replace('digo 200', 'digo 201'))
+docker compose run --rm --build bdd-tests python run.py features/smoke.feature ; "Codigo de salida: $LASTEXITCODE"
+#    -> "Esperaba HTTP 201, obtuvo 200", Codigo de salida: 1
+([xml](Get-Content e2e-tests\reports\junit.xml)).testsuites | Select-Object tests, failures
+start e2e-tests\reports\cucumber.html                      # escenario en ROJO con el mensaje
+git checkout -- e2e-tests/features/smoke.feature           # REVERTIR
+docker compose run --rm --build bdd-tests ; "Codigo de salida: $LASTEXITCODE"   # reportes finales en verde
+
+# 5.4 Al terminar
+docker compose down -v
+
+
+################################################################################
+# 6. PREGUNTAS PROBABLES DEL PROFE - respuestas cortas
+################################################################################
+
+P: ¿Qué es la pirámide de pruebas y cómo la repartieron?
+R: Muchas unitarias (rápidas, sin infraestructura): 64 Empleados, 10 Auth, 24 Gateway,
+   16 Vacaciones. Pocas de integración: 1 de Empleados contra PostgreSQL real con
+   Testcontainers. Pocas E2E/BDD: 25 escenarios contra el sistema completo. Si falla una
+   unitaria sé EXACTAMENTE qué regla se rompió; si solo hubiera E2E, solo sabría "algo falló".
+
+P: ¿Qué es BDD y por qué lo usaron?
+R: Pruebas escritas como comportamiento de negocio en Gherkin (Dado/Cuando/Entonces) en
+   español. Las entiende alguien que no conoce el código y son documentación viva: si el
+   escenario pasa, el comportamiento descrito es real.
+
+P: ¿Por qué Behave y no Cucumber-JVM o Cucumber.js?
+R: Gateway, Auth y Empleados ya están en Python, así que reutilizamos lenguaje y httpx.
+   Behave es compatible con Gherkin y Cucumber, soporta "# language: es" y genera JUnit
+   XML y Cucumber JSON.
+
+P: ¿Qué es un test double y dónde lo usan?
+R: Un objeto falso que reemplaza una dependencia real. En la prueba de "email duplicado"
+   de Empleados se usa un repositorio falso que ya tiene ese email y un cliente de
+   departamentos que siempre dice que existe. No toca PostgreSQL, HTTP ni RabbitMQ y corre
+   en milisegundos.
+
+P: ¿Diferencia entre prueba unitaria y de integración?
+R: La unitaria aísla la lógica con dobles y no necesita Docker. La de integración usa la
+   infraestructura real del servicio (su PostgreSQL) sin levantar los demás servicios.
+   Detecta errores que la unitaria no ve: un UNIQUE que falta en el schema o un SQL inválido.
+
+P: ¿Por qué Testcontainers y no H2/SQLite o una BD dedicada?
+R: Es el mismo motor de producción (PostgreSQL 16), así que si pasa aquí pasa en producción.
+   Cada corrida tiene un contenedor limpio, sin estado sucio. El costo es que necesita
+   Docker y tarda unos segundos más.
+
+P: ¿Qué NO probaron unitariamente? ¿La trampa del 70 %?
+R: Excluimos de la cobertura el adaptador SQL, la configuración y los archivos generados:
+   no tienen reglas de negocio, y el SQL se prueba en integración. La cobertura solo dice
+   qué líneas se ejecutaron, no que se verificaran. Por eso cada prueba hace aserciones
+   concretas (estado, payload del evento, código), y lo demostramos rompiendo una regla:
+   la prueba FALLA (bloque 3).
+
+P: ¿Por qué Vacaciones tiene cobertura global baja (~17 %)?
+R: Coverlet mide todo el ensamblado (endpoints, repositorio Npgsql, RabbitMQ), que son
+   infraestructura. La lógica de dominio (VacationRules: fechas, solapamiento, días
+   hábiles) está al 100 %. El 70 % se cumple en Empleados (~79 %), Auth (~86 %) y
+   Gateway (~92 %).
+
+P: ¿Cómo manejan la asincronía? ¿Por qué no sleep?
+R: Con polling: se consulta repetidamente hasta que la condición se cumple o vence el
+   timeout (support/polling.py, con reloj monotónico). Valores: timeout 30 s, intervalo
+   500 ms, máximo 120 intentos, configurables por variables de entorno. Con sleep fijo la
+   prueba siempre tarda lo máximo, y si el evento tarda un poco más falla al azar. Con
+   polling termina apenas el evento llega.
+
+P: ¿Cómo calibraron 30 s?
+R: Los eventos llegan en milisegundos y el scheduler corre cada 5 s, así que el ciclo de
+   vacaciones toma unos 10 s. 30 s da margen de 3x sin hacer lenta la suite. Las 3
+   corridas pasaron en unos 40 s.
+
+P: Polling sobre una condición NEGATIVA ("eventualmente NO puede entrar"): ¿cómo
+   distinguen "todavía no se procesó" de "nunca se va a procesar"?
+R: Primero se espera una señal POSITIVA de que el consumidor procesó el evento: la
+   notificación "Cuenta desactivada: VACACIONES". Solo después se verifica que el login
+   da 401. Así el 401 no es casualidad.
+
+P: ¿Cómo controlan el tiempo del scheduler sin esperar días?
+R: Vacaciones con fechaInicio = fechaFin = hoy (UTC) y el scheduler cada 5 s por variable
+   de entorno (VACACIONES_SCHEDULER_INTERVAL_SECONDS=5 en Reto_6/.env). Es el mismo
+   scheduler de producción, sin endpoint especial. La prueba no depende de la frecuencia
+   exacta porque usa polling: si el intervalo cambia, solo hay que ajustar
+   POLL_TIMEOUT_SECONDS.
+
+P: ¿Cómo garantizan que los escenarios sean independientes?
+R: Cada escenario crea su propio contexto (ScenarioState, en el hook before_scenario):
+   su propio departamento, empleado, email, número de empleado y contraseña, con un sufijo
+   único de fecha UTC más bytes aleatorios. Ningún escenario lee datos de otro. Los
+   retirados no se borran porque el dominio los conserva para auditoría.
+
+P: ¿Cómo se comparte el token entre pasos?
+R: En el contexto del escenario (context.state): admin_token, user_token, current_token,
+   la última respuesta HTTP y la URL base. Es nuevo por escenario. El login de ADMIN se
+   hace una vez y se reutiliza dentro del escenario.
+
+P: ¿Cómo resolvieron las precondiciones complejas ("empleado activo con credenciales")?
+R: Un paso "Dado que existe un empleado activo con credenciales establecidas" que hace
+   todo por HTTP: crea el departamento y el empleado, espera con polling la notificación
+   SEGURIDAD, obtiene el token de activación, hace el reset de contraseña y espera hasta
+   que el login funcione. Se reutiliza en seguridad, vacaciones y offboarding.
+
+P: ¿Qué formatos de reporte generan y para qué?
+R: JUnit XML (junit.xml): Jenkins lo lee para saber qué pasó o falló y poner el build en
+   rojo. Cucumber JSON + HTML: reporte navegable en lenguaje de negocio. Cobertura en
+   Cobertura/coverage.xml, que la consume SonarQube en el Reto 7. Las rutas están en la
+   tabla del README.
+
+P: ¿Cómo sabe Jenkins que la suite falló?
+R: Por el código de salida. run.py devuelve el de Behave, y "docker compose run --rm
+   bdd-tests" lo propaga: 0 si todo pasa, 1 si algo falla (demostrado en el bloque 5.3).
+
+P: ¿Qué hiciste tú en Docker?  (parte de Steven)
+R: Empaqueté la suite BDD como contenedor:
+   - e2e-tests/Dockerfile: python 3.12-slim, sin .env ni credenciales.
+   - Reto_6/docker-compose.yml: levanta el mismo sistema del Reto 5 sin duplicar código,
+     más el servicio bdd-tests, que tiene:
+       - perfil "tests", para que `up` no lo arranque;
+       - depends_on con el Gateway sano;
+       - BASE_URL=http://api-gateway:8080 dentro de la red de Compose;
+       - credenciales por variables de entorno;
+       - el volumen ./e2e-tests/reports, para que los reportes sobrevivan al contenedor
+         y Jenkins los publique.
+   - Scheduler en 5 s para las pruebas.
+   - Verifiqué 3 corridas seguidas en verde y documenté la tabla de reportes.
+
+P: ¿Por qué el perfil "tests"?
+R: Para separar "levantar el sistema" (docker compose up) de "probarlo" (docker compose
+   run --rm bdd-tests). Así la suite corre una vez, devuelve su código de salida y se
+   borra (--rm), que es justo lo que hará el pipeline.
