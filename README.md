@@ -13,6 +13,7 @@ y agrega nuevos conceptos sin reemplazar los retos anteriores.
 | [Reto 3](Reto_3/README.md) | API Gateway y resiliencia | Completado y verificado con Docker Compose: punto de entrada unico, Circuit Breaker probado en runtime (ver seccion 18 del README del reto) |
 | [Reto 4](Reto_4/HANDOFF_RETO4.md) | Eventos RabbitMQ, perfiles, notificaciones y vacaciones | Logica y despliegue verificados segun el handoff tecnico del reto |
 | [Reto 5](Reto_5/README.md) | JWT, RBAC, ciclo de vida de cuentas por eventos y scheduler | Completado y verificado con Docker Compose: 18 pasos del flujo integrado, incluido el caso borde de retiro durante vacaciones |
+| [Reto 6](Reto_6/README.md) | Automatizacion de pruebas: unitarias, integracion y BDD | Completado: 64 unitarias de Empleados (79 % de cobertura), Auth, Gateway y Vacaciones; integracion con Testcontainers; 25 escenarios BDD en verde 3 veces seguidas, tambien en contenedor `bdd-tests` |
 
 ## Estructura general
 
@@ -48,6 +49,7 @@ Micro/
 |   +-- README.md
 +-- Reto_4/                   # Eventos de RR. HH. con RabbitMQ
 +-- Reto_5/                   # auth-service, Gateway con JWT/RBAC y scheduler, con Docker Compose
++-- Reto_6/                   # Pruebas: scripts por suite, e2e-tests (Behave) y Compose con bdd-tests
 ```
 
 Reto 2 importa el modelo de `Reto_1/app/models.py` y lo incorpora en su imagen
@@ -129,6 +131,16 @@ docker compose down
 
 El flujo completo de 18 pasos y su evidencia estan en
 [Reto_5/README.md](Reto_5/README.md) y `Reto_5/comandos_sustentacion_reto5.txt`.
+
+Reto 6 (suite BDD en contenedor; las demas suites estan en [Reto_6/README.md](Reto_6/README.md)):
+
+```powershell
+Set-Location C:\Users\Steven\Documents\Micro\Reto_6
+if (!(Test-Path .env)) { Copy-Item .env.example .env }
+docker compose up --build -d --wait --wait-timeout 300
+docker compose run --rm --build bdd-tests   # reportes en e2e-tests/reports
+docker compose down -v
+```
 
 ## Tecnologias utilizadas
 

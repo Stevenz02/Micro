@@ -1,6 +1,6 @@
 # Reto 6: automatización de pruebas
 
-Este reto añade pruebas repetibles sobre el sistema de `Reto_5`. Mantiene tres niveles: pruebas unitarias de reglas aisladas, una integración con PostgreSQL real y escenarios BDD por HTTP contra el sistema desplegado. Los reportes quedan en rutas fijas para Jenkins y SonarQube en el Reto 7. No se modifica Docker Compose: otro integrante puede empaquetar la suite BDD y conectar los reportes como volumen.
+Este reto añade pruebas repetibles sobre el sistema de `Reto_5`. Mantiene tres niveles: pruebas unitarias de reglas aisladas, una integración con PostgreSQL real y escenarios BDD por HTTP contra el sistema desplegado. Los reportes quedan en rutas fijas para Jenkins y SonarQube en el Reto 7. La suite BDD también está empaquetada como contenedor (`bdd-tests`) en `Reto_6/docker-compose.yml`, que levanta el mismo ecosistema del Reto 5 y conserva los reportes en el host mediante un volumen (ver [Ejecución con Docker](#ejecución-con-docker-suite-bdd-en-contenedor)).
 
 ## Arquitectura de pruebas
 
@@ -57,6 +57,7 @@ Cada comando retorna un código diferente de cero si falla. `run_empleados.ps1` 
 | api-gateway | `run_gateway.ps1` | `Reto_5/api-gateway/reports/junit.xml` | `Reto_5/api-gateway/reports/coverage.xml` | — |
 | vacaciones-service | `run_vacaciones.ps1` | `Reto_5/vacaciones.tests/reports/vacaciones.trx` | `Reto_5/vacaciones.tests/reports/coverage.xml` (Cobertura) | — |
 | e2e-tests | `run_e2e.ps1` o `python Reto_6/e2e-tests/run.py` | `Reto_6/e2e-tests/reports/junit.xml` | — | `Reto_6/e2e-tests/reports/cucumber.json` y `cucumber.html` |
+| e2e-tests en Docker (`bdd-tests`) | `docker compose run --rm bdd-tests` (desde `Reto_6`) | `Reto_6/e2e-tests/reports/junit.xml` | — | `Reto_6/e2e-tests/reports/cucumber.json` y `cucumber.html` |
 
 El runner BDD genera también XML crudo de Behave en `reports/junit_raw/`. La cobertura de Empleados mide `main.py`, `models.py` y `events.py`, que contienen las reglas, decisiones HTTP y publicación del catálogo. Se excluyen el adaptador SQL, la configuración, el Dockerfile y los archivos generados. La cobertura de Vacaciones mide toda la imagen de código, por lo que su porcentaje global incluye infraestructura no ejercitada por la suite unitaria; `VacationRules` sí se cubre íntegramente.
 
@@ -81,6 +82,75 @@ Se ejecutó el 12 de octubre de 2026 en Windows con Docker Compose y PostgreSQL/
 
 Prueba deliberada de fallo: se cambió temporalmente la expectativa de salud de 200 a 201. Behave salió con código **1**; JUnit registró un fallo, el HTML marcó el escenario como fallido y ambos reportaron “Esperaba HTTP 201, obtuvo 200”. En Vacaciones se cambió temporalmente el límite inclusivo de solapamiento; xUnit salió con código **1** e indicó `Expected: True, Actual: False` para dos períodos que comparten la fecha límite. Ambos cambios se revirtieron, se ejecutaron otra vez las suites y los reportes finales quedaron sin fallos.
 
-## Variables necesarias para Dockerizar la suite
+## Ejecución con Docker (suite BDD en contenedor)
+
+La suite BDD se ejecuta también como un contenedor dentro del mismo Compose del sistema, sin instalar Python ni dependencias en la máquina. Esto deja listo el comando que usará el pipeline de Jenkins en el Reto 7.
+
+### Archivos
+
+| Archivo | Propósito |
+|---|---|
+| `Reto_6/docker-compose.yml` | Levanta el ecosistema completo del Reto 5: 15 servicios, cuyo código se toma de `../Reto_4` y `../Reto_5` sin duplicarlo. Agrega el servicio **`bdd-tests`**. |
+| `Reto_6/e2e-tests/Dockerfile` | Imagen `python:3.12-slim` con Behave, httpx y python-dotenv. Su comando por defecto es `python run.py`. No incluye `.env` ni credenciales. |
+| `Reto_6/e2e-tests/.dockerignore` | Excluye `.env`, `reports/` y cachés de la imagen. |
+| `Reto_6/.env.example` | Las variables del sistema del Reto 5 más las de la suite: `E2E_ADMIN_PASSWORD`, `POLL_*` y `HTTP_TIMEOUT_SECONDS`. El scheduler queda en `VACACIONES_SCHEDULER_INTERVAL_SECONDS=5`. |
+
+### Servicio `bdd-tests`
+
+```yaml
+bdd-tests:
+  build: ./e2e-tests
+  profiles: ["tests"]                       # `up` no lo arranca; se ejecuta bajo demanda
+  environment:
+    BASE_URL: http://api-gateway:8080       # nombre del Gateway dentro de la red de Compose
+    ADMIN_EMAIL: ${ADMIN_EMAIL}
+    ADMIN_PASSWORD: ${E2E_ADMIN_PASSWORD}
+    POLL_TIMEOUT_SECONDS / POLL_INTERVAL_MS / POLL_MAX_ATTEMPTS / HTTP_TIMEOUT_SECONDS
+  depends_on:
+    api-gateway: { condition: service_healthy }
+  volumes:
+    - ./e2e-tests/reports:/app/reports      # los reportes sobreviven al contenedor
+  networks: [microservices-network]
+```
+
+Decisiones:
+
+- **Perfil `tests`.** Con el perfil, `docker compose up` levanta solo el sistema. La suite corre después, a propósito, con `docker compose run --rm bdd-tests`. Ese comando devuelve el **código de salida de Behave**: `0` si todo pasa y distinto de cero si algo falla. Es el comportamiento que necesita Jenkins para marcar el build en rojo.
+- **`depends_on` con `service_healthy`.** La suite no empieza hasta que el Gateway responde `/health`, y el Gateway a su vez espera a que Auth y los cinco servicios estén sanos. Así se evitan fallos falsos por arranque.
+- **Volumen de reportes.** `run.py` escribe en `/app/reports`, que está montado sobre `Reto_6/e2e-tests/reports`. Los tres reportes quedan en el host después de que el contenedor se elimina con `--rm`.
+- **Credenciales por entorno.** La imagen no contiene `.env`. Compose inyecta el usuario y la contraseña del admin semilla desde `Reto_6/.env`. La contraseña es la misma de demo documentada en el Reto 5, y su uso es académico.
+- **Scheduler a 5 s.** Con ese intervalo, el escenario "El inicio suspende el login y el fin lo restablece" se completa en unos 10 s, dentro del timeout de polling de 30 s. Se usa el mismo scheduler de producción, sin endpoint especial.
+- **Proyecto aparte.** El proyecto Compose `reto_6` tiene contenedores y volúmenes propios, así que no comparte datos con el Reto 5. Como ambos publican el puerto 8080, hay que apagar el Reto 5 antes.
+
+### Comandos (PowerShell, desde la raíz del repositorio)
+
+```powershell
+cd Reto_5 ; docker compose down              # libera el puerto 8080
+cd ..\Reto_6
+if (-not (Test-Path .env)) { Copy-Item .env.example .env }
+docker compose up --build -d --wait --wait-timeout 300
+docker compose run --rm --build bdd-tests    # un solo comando para la suite BDD
+"Codigo de salida: $LASTEXITCODE"
+start e2e-tests\reports\cucumber.html
+docker compose down -v                       # al terminar
+```
+
+### Evidencia en contenedor
+
+Ejecución del 13 de octubre de 2026 en Windows con Docker Desktop: tres corridas consecutivas de `docker compose run --rm bdd-tests` sobre el sistema levantado con `Reto_6/docker-compose.yml`.
+
+| Corrida | Características | Escenarios | Pasos | Duración | Código de salida |
+|---|---|---|---|---|---|
+| 1 (con `--build`) | 5/5 | 25/25 | 116/116 | 39.458 s | 0 |
+| 2 | 5/5 | 25/25 | 116/116 | 40.227 s | 0 |
+| 3 | 5/5 | 25/25 | 116/116 | 37.651 s | 0 |
+
+La duración baja de unos 1:27 (ejecución local) a unos 40 s porque el scheduler corre cada 5 s y la suite está dentro de la red de Compose. Los reportes de la última corrida coinciden entre sí:
+
+- `junit.xml` tiene `tests="25" failures="0" errors="0" skipped="0"`, repartidos en 5 suites: offboarding 2, onboarding 7, seguridad 9, smoke 1 y vacaciones 6.
+- `cucumber.json` tiene 5 características, 25 escenarios y 116 pasos, todos `passed`.
+- `cucumber.html` muestra "5 características · 25 escenarios · 116 pasos", todo en verde.
+
+## Variables de la suite BDD
 
 `BASE_URL`, `ADMIN_EMAIL`, `ADMIN_PASSWORD`, `POLL_TIMEOUT_SECONDS`, `POLL_INTERVAL_MS`, `POLL_MAX_ATTEMPTS` y `HTTP_TIMEOUT_SECONDS`; `USER_EMAIL` y `USER_PASSWORD` se reservan para un USER precargado si el equipo decide añadirlo. El contenedor de pruebas debe estar en `microservices-network`, usar `BASE_URL=http://api-gateway:8080` y montar `e2e-tests/reports` para conservar los reportes. No incluya `.env` ni credenciales en la imagen.
