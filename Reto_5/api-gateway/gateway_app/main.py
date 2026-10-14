@@ -8,12 +8,42 @@ from fastapi import FastAPI, Request
 from fastapi.openapi.utils import get_openapi
 from fastapi.openapi.docs import get_swagger_ui_html
 from fastapi.responses import JSONResponse, Response
+from pydantic import BaseModel, ConfigDict, Field
 
 from shared.tokens import InvalidToken, validate_access
 
 from .config import Settings
 
 logger = logging.getLogger(__name__)
+
+
+class LoginInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    email: str = Field(examples=["usuario@empresa.com"])
+    password: str = Field(examples=["ClavePersonal2026"])
+
+
+class RecoverInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    email: str = Field(examples=["usuario@empresa.com"])
+
+
+class ResetInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    token: str = Field(description="Token recibido en la notificación de seguridad")
+    newPassword: str = Field(description="Contraseña nueva según la política de Auth")
+
+
+class ChangeInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    currentPassword: str
+    newPassword: str
+
+
+class TokenOutput(BaseModel):
+    access_token: str
+    token_type: str
+    expires_in: int
 
 METHODS = ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"]
 HOP_BY_HOP_HEADERS = {
@@ -45,6 +75,7 @@ PUBLIC_ROUTES = {
     ("GET", "/notificaciones/openapi.json/swagger-config"),
     ("GET", "/vacaciones/docs"),
     ("GET", "/vacaciones/v1/openapi.json"),
+    ("GET", "/departamentos/docs"),
     ("GET", "/departamentos/openapi.json"),
     ("GET", "/empleados/docs"),
     ("GET", "/empleados/openapi.json"),
@@ -118,7 +149,10 @@ def create_app(settings: Settings | None = None, client: httpx.AsyncClient | Non
         title="Reto 5 - API Gateway",
         version="5.0.0",
         lifespan=lifespan,
-        description="Entrada única con validación HS256, RBAC y propiedad del perfil.",
+        description=("Entrada única con validación HS256, RBAC y propiedad del perfil. "
+                     "Para explorar contratos completos use /auth/docs, /empleados/docs, "
+                     "/departamentos/docs, /perfiles/docs, /notificaciones/docs y /vacaciones/docs. "
+                     "Obtenga access_token en POST /auth/login y péguelo en Authorize."),
     )
 
     @app.middleware("http")
@@ -204,6 +238,15 @@ def create_app(settings: Settings | None = None, client: httpx.AsyncClient | Non
         return await proxy(request, "empleados-service", request.app.state.settings.empleados_url,
                            target_path="/openapi.json")
 
+    @app.get("/departamentos/docs", include_in_schema=False)
+    async def departamentos_docs():
+        return get_swagger_ui_html(openapi_url="/departamentos/openapi.json", title="Departamentos Swagger")
+
+    @app.get("/departamentos/openapi.json", include_in_schema=False)
+    async def departamentos_openapi(request: Request):
+        return await proxy(request, "departamentos-service", request.app.state.settings.departamentos_url,
+                           target_path="/openapi.json")
+
     async def empleados(request: Request):
         return await proxy(request, "empleados-service", request.app.state.settings.empleados_url)
 
@@ -230,19 +273,30 @@ def create_app(settings: Settings | None = None, client: httpx.AsyncClient | Non
             for method in METHODS:
                 app.add_api_route(route_path, endpoint, methods=[method], tags=["Proxy"])
 
-    @app.post("/auth/login", tags=["Autenticación"])
+    @app.post("/auth/login", tags=["Autenticación"], response_model=TokenOutput,
+              responses={401: {"description": "Credenciales inválidas"},
+                         422: {"description": "Cuerpo inválido"},
+                         503: {"description": "Auth no disponible"}})
     async def auth_login(request: Request):
         return await proxy(request, "auth-service", request.app.state.settings.auth_url)
 
-    @app.post("/auth/recover-password", tags=["Autenticación"])
+    @app.post("/auth/recover-password", tags=["Autenticación"], status_code=202,
+              responses={422: {"description": "Cuerpo inválido"},
+                         503: {"description": "Auth no disponible"}})
     async def auth_recover(request: Request):
         return await proxy(request, "auth-service", request.app.state.settings.auth_url)
 
-    @app.post("/auth/reset-password", tags=["Autenticación"])
+    @app.post("/auth/reset-password", tags=["Autenticación"],
+              responses={400: {"description": "Token o contraseña inválidos"},
+                         422: {"description": "Cuerpo inválido"}})
     async def auth_reset(request: Request):
         return await proxy(request, "auth-service", request.app.state.settings.auth_url)
 
-    @app.post("/auth/change-password", tags=["Autenticación"])
+    @app.post("/auth/change-password", tags=["Autenticación"],
+              responses={400: {"description": "Contraseña actual incorrecta o nueva inválida"},
+                         401: {"description": "Token inválido o cuenta no disponible"},
+                         409: {"description": "La cuenta cambió durante la operación"},
+                         422: {"description": "Cuerpo inválido"}})
     async def auth_change(request: Request):
         return await proxy(request, "auth-service", request.app.state.settings.auth_url)
 
@@ -258,6 +312,16 @@ def create_app(settings: Settings | None = None, client: httpx.AsyncClient | Non
             schema.setdefault("components", {}).setdefault("securitySchemes", {})["BearerAuth"] = {
                 "type": "http", "scheme": "bearer", "bearerFormat": "JWT"
             }
+            for path, model in {
+                "/auth/login": LoginInput,
+                "/auth/recover-password": RecoverInput,
+                "/auth/reset-password": ResetInput,
+                "/auth/change-password": ChangeInput,
+            }.items():
+                schema["paths"][path]["post"]["requestBody"] = {
+                    "required": True,
+                    "content": {"application/json": {"schema": model.model_json_schema()}},
+                }
             for path, methods in schema["paths"].items():
                 for method, operation in methods.items():
                     if method.upper() in METHODS and (method.upper(), path) not in PUBLIC_ROUTES:
