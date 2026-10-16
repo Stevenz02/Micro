@@ -1,12 +1,13 @@
 import logging
 import json
+import copy
 from contextlib import asynccontextmanager
 from urllib.parse import urlsplit, urlunsplit
 
 import httpx
 from fastapi import FastAPI, Request
 from fastapi.openapi.utils import get_openapi
-from fastapi.openapi.docs import get_swagger_ui_html
+from fastapi.openapi.docs import get_swagger_ui_html, get_redoc_html
 from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -133,6 +134,65 @@ def _secure_openapi(body: bytes) -> bytes:
     return json.dumps(schema, ensure_ascii=False).encode("utf-8")
 
 
+def _merge_service_openapi(gateway_schema: dict, source: dict, service: str) -> None:
+    """Copy the public service contract into the single Gateway document."""
+    if not isinstance(source.get("paths"), dict):
+        return
+    prefix = "/" + service.lower()
+    if any(path == prefix or path.startswith(prefix + "/")
+           for path in source["paths"]):
+        for path in list(gateway_schema["paths"]):
+            if path == prefix or path.startswith(prefix + "/"):
+                operations = gateway_schema["paths"][path]
+                for method in list(operations):
+                    if isinstance(operations[method], dict) and operations[method].get("tags") == ["Proxy"]:
+                        del operations[method]
+                if not operations:
+                    del gateway_schema["paths"][path]
+    schemas = source.get("components", {}).get("schemas", {})
+    names = {name: f"{service}_{name}" for name in schemas}
+
+    def namespace_refs(value):
+        if isinstance(value, dict):
+            return {key: (f"#/components/schemas/{names[ref]}"
+                          if key == "$ref" and isinstance(item, str)
+                          and item.startswith("#/components/schemas/")
+                          and (ref := item.rsplit("/", 1)[-1]) in names
+                          else namespace_refs(item)) for key, item in value.items()}
+        if isinstance(value, list):
+            return [namespace_refs(item) for item in value]
+        return value
+
+    target_schemas = gateway_schema.setdefault("components", {}).setdefault("schemas", {})
+    for name, definition in schemas.items():
+        target_schemas[names[name]] = namespace_refs(definition)
+    for path, methods in source["paths"].items():
+        # The upstream health endpoint is not reachable at this path through the Gateway.
+        if path == "/health" or not isinstance(methods, dict):
+            continue
+        target = gateway_schema["paths"].setdefault(path, {})
+        for method, operation in methods.items():
+            if method.upper() not in METHODS or not isinstance(operation, dict):
+                continue
+            # Gateway declares the public Auth requests and the login token response
+            # more precisely than Auth's generated schema (which has no response_model).
+            if service == "Auth" and method in target:
+                continue
+            documented = namespace_refs(operation)
+            documented["tags"] = [service]
+            if path.startswith("/auth/") and path in {
+                "/auth/login", "/auth/recover-password", "/auth/reset-password"
+            }:
+                documented.pop("security", None)
+            else:
+                documented["security"] = [{"BearerAuth": []}]
+                documented.setdefault("responses", {}).setdefault(
+                    "401", {"description": "Bearer ausente o inválido"})
+                documented["responses"].setdefault(
+                    "403", {"description": "Permiso insuficiente"})
+            target[method] = documented
+
+
 def create_app(settings: Settings | None = None, client: httpx.AsyncClient | None = None):
     @asynccontextmanager
     async def lifespan(app):
@@ -149,6 +209,7 @@ def create_app(settings: Settings | None = None, client: httpx.AsyncClient | Non
         title="Reto 5 - API Gateway",
         version="5.0.0",
         lifespan=lifespan,
+        openapi_url=None,
         description=("Entrada única con validación HS256, RBAC y propiedad del perfil. "
                      "Para explorar contratos completos use /auth/docs, /empleados/docs, "
                      "/departamentos/docs, /perfiles/docs, /notificaciones/docs y /vacaciones/docs. "
@@ -158,7 +219,11 @@ def create_app(settings: Settings | None = None, client: httpx.AsyncClient | Non
     @app.middleware("http")
     async def authorize(request: Request, call_next):
         method, path = request.method, request.scope["path"]
-        if (method, path) in PUBLIC_ROUTES:
+        public_docs_asset = method == "GET" and (
+            path.startswith("/notificaciones/swagger-ui/")
+            or path.startswith("/vacaciones/docs/")
+        )
+        if (method, path) in PUBLIC_ROUTES or public_docs_asset:
             return await call_next(request)
         authorization = request.headers.get("authorization", "")
         scheme, separator, token = authorization.partition(" ")
@@ -330,6 +395,45 @@ def create_app(settings: Settings | None = None, client: httpx.AsyncClient | Non
         return app.openapi_schema
 
     app.openapi = custom_openapi
+
+    @app.get("/docs", include_in_schema=False)
+    async def gateway_docs():
+        return get_swagger_ui_html(openapi_url="/openapi.json", title="Reto 6 - Gateway Swagger")
+
+    @app.get("/redoc", include_in_schema=False)
+    async def gateway_redoc():
+        return get_redoc_html(openapi_url="/openapi.json", title="Reto 6 - Gateway ReDoc")
+
+    @app.get("/openapi.json", include_in_schema=False)
+    async def gateway_openapi(request: Request):
+        if not hasattr(app.state, "combined_openapi"):
+            schema = copy.deepcopy(custom_openapi())
+            sources = (
+                ("Auth", request.app.state.settings.auth_url, "/auth/openapi.json"),
+                ("Empleados", request.app.state.settings.empleados_url, "/openapi.json"),
+                ("Departamentos", request.app.state.settings.departamentos_url, "/openapi.json"),
+                ("Perfiles", request.app.state.settings.perfiles_url, "/perfiles/openapi.json"),
+                ("Notificaciones", request.app.state.settings.notificaciones_url, "/notificaciones/openapi.json"),
+                ("Vacaciones", request.app.state.settings.vacaciones_url, "/vacaciones/v1/openapi.json"),
+            )
+            merged = 0
+            for name, base, path in sources:
+                try:
+                    response = await request.app.state.http.get(
+                        _target_url(base, path, ""), timeout=request.app.state.settings.timeout)
+                    response.raise_for_status()
+                    source = response.json()
+                    if not isinstance(source, dict) or not isinstance(source.get("paths"), dict) or not source["paths"]:
+                        raise ValueError("OpenAPI sin rutas")
+                    _merge_service_openapi(schema, source, name)
+                    merged += 1
+                except (httpx.HTTPError, ValueError, TypeError, KeyError) as exc:
+                    logger.warning("No se pudo incorporar OpenAPI de %s: %s", name, exc)
+            schema["servers"] = [{"url": "/"}]
+            if merged == len(sources):
+                app.state.combined_openapi = schema
+            return JSONResponse(schema)
+        return JSONResponse(app.state.combined_openapi)
 
     return app
 
