@@ -43,6 +43,13 @@ def test_public_routes_only_and_401_for_business():
     assert len(calls) == 1
 
 
+def test_swagger_redirect_assets_are_public_but_business_paths_remain_protected():
+    with gateway(lambda request: httpx.Response(200, text="swagger")) as client:
+        assert client.get("/notificaciones/swagger-ui/index.html").status_code == 200
+        assert client.get("/vacaciones/docs/index.html").status_code == 200
+        assert client.get("/notificaciones/EMP-1").status_code == 401
+
+
 @pytest.mark.parametrize("method,path,role,subject,expected", [
     ("GET", "/empleados", "USER", "E001", 200),
     ("GET", "/departamentos/IT", "USER", "E001", 200),
@@ -98,7 +105,36 @@ def test_gateway_openapi_declares_bearer_for_protected_operations():
     assert schema["paths"]["/auth/change-password"]["post"]["security"] == [{"BearerAuth": []}]
     assert schema["paths"]["/auth/login"]["post"]["requestBody"]["content"]["application/json"]["schema"]["required"] == ["email", "password"]
     assert "200" in schema["paths"]["/auth/login"]["post"]["responses"]
+    assert schema["paths"]["/auth/login"]["post"]["responses"]["200"]["content"]["application/json"]["schema"]["$ref"] == "#/components/schemas/TokenOutput"
     assert "400" in schema["paths"]["/auth/reset-password"]["post"]["responses"]
+
+
+def test_gateway_openapi_includes_upstream_contracts_and_namespaced_models():
+    def handler(request):
+        paths = {"empleados": "/empleados", "departamentos": "/departamentos"}
+        if request.url.host not in paths:
+            return httpx.Response(200, json={"openapi": "3.0.3", "paths": {}})
+        path = paths[request.url.host]
+        return httpx.Response(200, json={
+            "openapi": "3.0.3",
+            "paths": {path: {"post": {
+                "requestBody": {"content": {"application/json": {
+                    "schema": {"$ref": "#/components/schemas/Record"}}}},
+                "responses": {"201": {"description": "Creado"}},
+            }}},
+            "components": {"schemas": {"Record": {"type": "object"}}},
+        })
+    with gateway(handler) as client:
+        schema = client.get("/openapi.json").json()
+        assert client.get("/docs").status_code == 200
+        assert client.get("/redoc").status_code == 200
+    for service, path in (("Empleados", "/empleados"),
+                          ("Departamentos", "/departamentos")):
+        operation = schema["paths"][path]["post"]
+        assert operation["requestBody"]["content"]["application/json"]["schema"] == {
+            "$ref": f"#/components/schemas/{service}_Record"}
+        assert operation["security"] == [{"BearerAuth": []}]
+        assert "401" in operation["responses"]
 
 
 def test_upstream_openapi_is_documented_with_bearer_at_gateway():

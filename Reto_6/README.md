@@ -1,5 +1,7 @@
 # Reto 6: automatización de pruebas
 
+La interfaz de demostración es **[Swagger del Gateway](http://localhost:8080/docs)**. El Gateway reúne los contratos reales de Auth, Empleados, Departamentos, Perfiles, Notificaciones y Vacaciones en `/openapi.json`, con esquemas de request/response y autorización Bearer. Consulte el [inventario de rutas](docs/RUTAS_RETO6.md), la [secuencia de sustentación](docs/SUSTENTACION_RETO6.md) y los [resultados de esta verificación](docs/RESULTADOS_EJECUCION_RETO6.md).
+
 Este reto añade pruebas repetibles sobre el sistema de `Reto_5`. Mantiene tres niveles: pruebas unitarias de reglas aisladas, una integración con PostgreSQL real y escenarios BDD por HTTP contra el sistema desplegado. Los reportes quedan en rutas fijas para Jenkins y SonarQube en el Reto 7. La suite BDD también está empaquetada como contenedor (`bdd-tests`) en `Reto_6/docker-compose.yml`, que levanta el mismo ecosistema del Reto 5 y conserva los reportes en el host mediante un volumen (ver [Ejecución con Docker](#ejecución-con-docker-suite-bdd-en-contenedor)).
 
 ## Arquitectura de pruebas
@@ -65,11 +67,11 @@ El runner BDD genera también XML crudo de Behave en `reports/junit_raw/`. La co
 
 Los 25 escenarios describen disponibilidad, tokens ausentes/alterados, RBAC ADMIN/USER, propiedad del perfil, headers falsificados, registro válido e inválido, activación, programación y solapamiento de vacaciones, suspensión/reactivación y retiro definitivo. Los 116 pasos usan HTTP real o aserciones sobre sus respuestas y proyecciones.
 
-Swagger se abre en `http://localhost:8080/docs`. El Gateway también ofrece `/auth/docs`, `/empleados/docs`, `/perfiles/docs`, `/notificaciones/docs` y `/vacaciones/docs`, con `Authorize` Bearer para llamadas protegidas. El login devuelve `access_token`; se copia en `Authorize` sin el prefijo `Bearer`. Los códigos más relevantes son 200 lectura/cambio, 201 creación, 202 recuperación anónima o alta pendiente, 400 regla de dominio, 401 token/credenciales, 403 permiso, 404 recurso ausente y 422 cuerpo inválido.
+Swagger se abre en `http://localhost:8080/docs` y reúne las 24 operaciones reales del Gateway. También existen los Swagger individuales en `/auth/docs`, `/empleados/docs`, `/departamentos/docs`, `/perfiles/docs`, `/notificaciones/docs` y `/vacaciones/docs`. El login devuelve `access_token`; se copia en `Authorize` sin el prefijo `Bearer`. Los códigos más relevantes son 200 lectura/cambio, 201 creación, 202 recuperación anónima o alta pendiente, 400 regla de dominio, 401 token/credenciales, 403 permiso, 404 recurso ausente y 422 cuerpo inválido.
 
 ## Evidencia de ejecución
 
-Se ejecutó el 12 de octubre de 2026 en Windows con Docker Compose y PostgreSQL/RabbitMQ reales. Las tres ejecuciones BDD consecutivas pasaron **25/25 escenarios y 116/116 pasos** en 1:27.744, 1:27.627 y 1:26.703. Una ejecución final, después de restaurar la prueba deliberada y actualizar Swagger, también pasó 25/25 en 1:31.718. Los reportes finales corresponden a esa ejecución correcta.
+La siguiente tabla conserva la evidencia histórica del 12 de octubre de 2026. La verificación actual, con rutas consolidadas y reportes nuevos, está en [RESULTADOS_EJECUCION_RETO6.md](docs/RESULTADOS_EJECUCION_RETO6.md).
 
 | Suite | Resultado | Cobertura medida |
 |---|---|---|
