@@ -136,7 +136,8 @@ public sealed class VacacionesRepository(NpgsqlDataSource db) : IVacationSchedul
     }
     public async Task<Vacacion> Create(VacacionRequest value) {
         await using var cmd = db.CreateCommand($"INSERT INTO vacaciones(id,empleado_id,fecha_inicio,fecha_fin,estado) VALUES($1,$2,$3,$4,'PROGRAMADA') RETURNING {Columns}");
-        cmd.Parameters.AddWithValue(value.Id); cmd.Parameters.AddWithValue(value.EmpleadoId); cmd.Parameters.AddWithValue(value.FechaInicio); cmd.Parameters.AddWithValue(value.FechaFin);
+        var id = value.Id ?? throw new InvalidOperationException("La vacación debe tener un ID antes de persistirse");
+        cmd.Parameters.AddWithValue(id); cmd.Parameters.AddWithValue(value.EmpleadoId); cmd.Parameters.AddWithValue(value.FechaInicio); cmd.Parameters.AddWithValue(value.FechaFin);
         await using var reader = await cmd.ExecuteReaderAsync(); await reader.ReadAsync(); return Read(reader);
     }
     public async Task<Vacacion?> Get(string id) {

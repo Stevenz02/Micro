@@ -1,0 +1,87 @@
+pipeline {
+  agent any
+  options { skipDefaultCheckout(true); timestamps(); disableConcurrentBuilds() }
+  parameters {
+    booleanParam(name: 'RUN_PACKAGE', defaultValue: false, description: 'Invoca el job de empaquetado mantenido por infraestructura')
+    string(name: 'PACKAGE_JOB', defaultValue: '', description: 'Nombre completo del job externo de Package')
+    booleanParam(name: 'TRIGGER_E2E', defaultValue: false, description: 'Dispara una única ejecución coordinada del pipeline E2E')
+    string(name: 'E2E_JOB', defaultValue: 'reto7-integracion-e2e', description: 'Job coordinador de BDD')
+  }
+  environment { TESTS_STARTED = 'false'; SONARQUBE_ENV = 'sonarqube-reto7' }
+  stages {
+    stage('Checkout') { steps { checkout scm } }
+    stage('Build') {
+      steps {
+        sh '''
+          set -eu
+          dotnet restore Reto_5/vacaciones.tests/Vacaciones.Tests.csproj
+          dotnet build Reto_5/vacaciones.tests/Vacaciones.Tests.csproj --configuration Release --no-restore
+        '''
+      }
+    }
+    stage('Test + Coverage') {
+      steps {
+        script {
+          env.TESTS_STARTED = 'true'
+          sh 'rm -rf Reto_5/vacaciones.tests/reports && mkdir -p Reto_5/vacaciones.tests/reports'
+          int testStatus = sh(returnStatus: true, script: '''
+            dotnet test Reto_5/vacaciones.tests/Vacaciones.Tests.csproj \
+              --configuration Release --no-build \
+              --settings Reto_7/ci/config/vacaciones.runsettings \
+              --collect:'XPlat Code Coverage' \
+              --results-directory Reto_5/vacaciones.tests/reports \
+              --logger 'trx;LogFileName=vacaciones.trx'
+          ''')
+          sh '''
+            python3 Reto_7/ci/scripts/normalize_dotnet_coverage.py \
+              --results Reto_5/vacaciones.tests/reports \
+              --cobertura Reto_5/vacaciones.tests/reports/coverage.xml \
+              --opencover Reto_5/vacaciones.tests/reports/coverage.opencover.xml
+          '''
+          if (testStatus != 0) { error("dotnet test falló con código ${testStatus}; los reportes fueron conservados") }
+        }
+      }
+    }
+    stage('SonarQube Analysis') {
+      steps {
+        withSonarQubeEnv(env.SONARQUBE_ENV) {
+          sh '''
+            set -eu
+            dotnet sonarscanner begin \
+              /k:"uq-reto7-vacaciones" \
+              /n:"Reto 7 - Vacaciones" \
+              /d:sonar.host.url="$SONAR_HOST_URL" \
+              /d:sonar.token="$SONAR_AUTH_TOKEN" \
+              /d:sonar.cs.opencover.reportsPaths="Reto_5/vacaciones.tests/reports/coverage.opencover.xml" \
+              /d:sonar.cs.vstest.reportsPaths="Reto_5/vacaciones.tests/reports/vacaciones.trx"
+            dotnet build Reto_5/vacaciones.tests/Vacaciones.Tests.csproj --configuration Release --no-restore
+            dotnet sonarscanner end /d:sonar.token="$SONAR_AUTH_TOKEN"
+          '''
+        }
+      }
+    }
+    stage('Quality Gate') { steps { timeout(time: 10, unit: 'MINUTES') { waitForQualityGate abortPipeline: true } } }
+    stage('Package') {
+      when { expression { params.RUN_PACKAGE } }
+      steps { script {
+        if (!params.PACKAGE_JOB?.trim()) { error('RUN_PACKAGE=true requiere PACKAGE_JOB; infraestructura debe aprovisionarlo') }
+        build job: params.PACKAGE_JOB.trim(), wait: true, propagate: true, parameters: [
+          string(name: 'COMPONENT_ID', value: 'vacaciones'), string(name: 'SOURCE_DIR', value: 'Reto_5/vacaciones'), string(name: 'SOURCE_BUILD', value: env.BUILD_NUMBER)
+        ]
+      } }
+    }
+    stage('E2E Tests') {
+      when { expression { params.TRIGGER_E2E } }
+      steps { build job: params.E2E_JOB, wait: true, propagate: true, parameters: [string(name: 'UPSTREAM_COMPONENT', value: 'vacaciones'), string(name: 'UPSTREAM_BUILD', value: env.BUILD_NUMBER)] }
+    }
+  }
+  post {
+    always { script { if (env.TESTS_STARTED == 'true') {
+      mstest testResultsFile: 'Reto_5/vacaciones.tests/reports/vacaciones.trx', keepLongStdio: true
+      recordCoverage tools: [[parser: 'COBERTURA', pattern: 'Reto_5/vacaciones.tests/reports/coverage.xml']], id: 'vacaciones', name: 'Cobertura Vacaciones', sourceCodeRetention: 'LAST_BUILD'
+      archiveArtifacts artifacts: 'Reto_5/vacaciones.tests/reports/vacaciones.trx,Reto_5/vacaciones.tests/reports/coverage.xml,Reto_5/vacaciones.tests/reports/coverage.opencover.xml', allowEmptyArchive: false
+    } } }
+    cleanup { deleteDir() }
+  }
+}
+

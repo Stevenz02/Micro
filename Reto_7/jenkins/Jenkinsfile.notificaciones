@@ -1,0 +1,54 @@
+pipeline {
+  agent any
+  options { skipDefaultCheckout(true); timestamps(); disableConcurrentBuilds() }
+  parameters {
+    booleanParam(name: 'RUN_PACKAGE', defaultValue: false, description: 'Invoca el job de empaquetado mantenido por infraestructura')
+    string(name: 'PACKAGE_JOB', defaultValue: '', description: 'Nombre completo del job externo de Package')
+    booleanParam(name: 'TRIGGER_E2E', defaultValue: false, description: 'Dispara una única ejecución coordinada del pipeline E2E')
+    string(name: 'E2E_JOB', defaultValue: 'reto7-integracion-e2e', description: 'Job coordinador de BDD')
+  }
+  environment { TESTS_STARTED = 'false'; SONARQUBE_ENV = 'sonarqube-reto7' }
+  stages {
+    stage('Checkout') { steps { checkout scm } }
+    stage('Build') {
+      steps { sh 'mvn -B -ntp -f Reto_5/notificaciones/pom.xml -DskipTests compile' }
+    }
+    stage('Test + Coverage') {
+      steps {
+        script {
+          env.TESTS_STARTED = 'true'
+          int mavenStatus = sh(returnStatus: true, script: 'mvn -B -ntp -f Reto_5/notificaciones/pom.xml -Dmaven.test.failure.ignore=true verify')
+          int testStatus = sh(returnStatus: true, script: "python3 Reto_7/ci/scripts/junit_status.py --glob 'Reto_5/notificaciones/target/surefire-reports/TEST-*.xml'")
+          if (mavenStatus != 0) { error("Maven verify falló con código ${mavenStatus}") }
+          if (testStatus != 0) { error("Las pruebas Java fallaron o no produjeron JUnit; código ${testStatus}") }
+        }
+      }
+    }
+    stage('SonarQube Analysis') {
+      steps { withSonarQubeEnv(env.SONARQUBE_ENV) { sh 'sonar-scanner -Dproject.settings=Reto_7/ci/config/sonar/notificaciones.properties' } }
+    }
+    stage('Quality Gate') { steps { timeout(time: 10, unit: 'MINUTES') { waitForQualityGate abortPipeline: true } } }
+    stage('Package') {
+      when { expression { params.RUN_PACKAGE } }
+      steps { script {
+        if (!params.PACKAGE_JOB?.trim()) { error('RUN_PACKAGE=true requiere PACKAGE_JOB; infraestructura debe aprovisionarlo') }
+        build job: params.PACKAGE_JOB.trim(), wait: true, propagate: true, parameters: [
+          string(name: 'COMPONENT_ID', value: 'notificaciones'), string(name: 'SOURCE_DIR', value: 'Reto_5/notificaciones'), string(name: 'SOURCE_BUILD', value: env.BUILD_NUMBER)
+        ]
+      } }
+    }
+    stage('E2E Tests') {
+      when { expression { params.TRIGGER_E2E } }
+      steps { build job: params.E2E_JOB, wait: true, propagate: true, parameters: [string(name: 'UPSTREAM_COMPONENT', value: 'notificaciones'), string(name: 'UPSTREAM_BUILD', value: env.BUILD_NUMBER)] }
+    }
+  }
+  post {
+    always { script { if (env.TESTS_STARTED == 'true') {
+      junit testResults: 'Reto_5/notificaciones/target/surefire-reports/TEST-*.xml', allowEmptyResults: false
+      recordCoverage tools: [[parser: 'JACOCO', pattern: 'Reto_5/notificaciones/target/site/jacoco/jacoco.xml']], id: 'notificaciones', name: 'Cobertura Notificaciones', sourceCodeRetention: 'LAST_BUILD'
+      archiveArtifacts artifacts: 'Reto_5/notificaciones/target/surefire-reports/TEST-*.xml,Reto_5/notificaciones/target/site/jacoco/jacoco.xml', allowEmptyArchive: false
+    } } }
+    cleanup { deleteDir() }
+  }
+}
+
