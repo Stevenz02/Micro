@@ -1,0 +1,72 @@
+pipeline {
+  agent any
+  options { skipDefaultCheckout(true); timestamps(); disableConcurrentBuilds() }
+  parameters {
+    booleanParam(name: 'RUN_PACKAGE', defaultValue: false, description: 'Invoca el job de empaquetado mantenido por infraestructura')
+    string(name: 'PACKAGE_JOB', defaultValue: '', description: 'Nombre completo del job externo de Package')
+    booleanParam(name: 'TRIGGER_E2E', defaultValue: false, description: 'Dispara una única ejecución coordinada del pipeline E2E')
+    string(name: 'E2E_JOB', defaultValue: 'reto7-integracion-e2e', description: 'Job coordinador de BDD')
+  }
+  environment { TESTS_STARTED = 'false'; SONARQUBE_ENV = 'sonarqube-reto7' }
+  stages {
+    stage('Checkout') { steps { checkout scm } }
+    stage('Build') {
+      steps {
+        dir('Reto_4/departamentos') {
+          sh '''
+            set -eu
+            npm ci --no-audit --no-fund
+            find src -name '*.js' -type f -print0 | xargs -0 -n1 node --check
+          '''
+        }
+      }
+    }
+    stage('Test + Coverage') {
+      steps {
+        script {
+          env.TESTS_STARTED = 'true'
+          int testStatus = sh(returnStatus: true, script: '''
+            cd Reto_4/departamentos
+            mkdir -p reports coverage
+            node --test --experimental-test-coverage \
+              --test-coverage-include='src/**/*.js' \
+              --test-reporter=junit --test-reporter-destination=reports/junit.xml \
+              --test-reporter=lcov --test-reporter-destination=coverage/lcov.info
+          ''')
+          sh '''
+            python3 Reto_7/ci/scripts/normalize_node_junit.py \
+              --input Reto_4/departamentos/reports/junit.xml \
+              --output Reto_4/departamentos/reports/junit.xml
+          '''
+          if (testStatus != 0) { error("node:test falló con código ${testStatus}; los reportes fueron conservados") }
+        }
+      }
+    }
+    stage('SonarQube Analysis') {
+      steps { withSonarQubeEnv(env.SONARQUBE_ENV) { sh 'sonar-scanner -Dproject.settings=Reto_7/ci/config/sonar/departamentos.properties' } }
+    }
+    stage('Quality Gate') { steps { timeout(time: 10, unit: 'MINUTES') { waitForQualityGate abortPipeline: true } } }
+    stage('Package') {
+      when { expression { params.RUN_PACKAGE } }
+      steps { script {
+        if (!params.PACKAGE_JOB?.trim()) { error('RUN_PACKAGE=true requiere PACKAGE_JOB; infraestructura debe aprovisionarlo') }
+        build job: params.PACKAGE_JOB.trim(), wait: true, propagate: true, parameters: [
+          string(name: 'COMPONENT_ID', value: 'departamentos'), string(name: 'SOURCE_DIR', value: 'Reto_4/departamentos'), string(name: 'SOURCE_BUILD', value: env.BUILD_NUMBER)
+        ]
+      } }
+    }
+    stage('E2E Tests') {
+      when { expression { params.TRIGGER_E2E } }
+      steps { build job: params.E2E_JOB, wait: true, propagate: true, parameters: [string(name: 'UPSTREAM_COMPONENT', value: 'departamentos'), string(name: 'UPSTREAM_BUILD', value: env.BUILD_NUMBER)] }
+    }
+  }
+  post {
+    always { script { if (env.TESTS_STARTED == 'true') {
+      junit testResults: 'Reto_4/departamentos/reports/junit.xml', allowEmptyResults: false
+      recordCoverage tools: [[parser: 'LCOV', pattern: 'Reto_4/departamentos/coverage/lcov.info']], id: 'departamentos', name: 'Cobertura Departamentos', sourceCodeRetention: 'LAST_BUILD'
+      archiveArtifacts artifacts: 'Reto_4/departamentos/reports/junit.xml,Reto_4/departamentos/coverage/lcov.info', allowEmptyArchive: false
+    } } }
+    cleanup { deleteDir() }
+  }
+}
+

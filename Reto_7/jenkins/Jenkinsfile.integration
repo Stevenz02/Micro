@@ -1,0 +1,61 @@
+pipeline {
+  agent any
+  options { skipDefaultCheckout(true); timestamps(); disableConcurrentBuilds() }
+  parameters {
+    string(name: 'GATEWAY_BASE_URL', defaultValue: 'http://localhost:8080', description: 'Gateway ya desplegado por infraestructura')
+    string(name: 'UPSTREAM_COMPONENT', defaultValue: 'manual', description: 'Componente que solicitó la ejecución')
+    string(name: 'UPSTREAM_BUILD', defaultValue: '', description: 'Build origen para trazabilidad')
+  }
+  environment {
+    CI_VENV = '.ci/venv-e2e'
+    BDD_REPORTS_EXPECTED = 'false'
+    E2E_CREDENTIALS_ID = 'reto7-e2e-admin'
+    POLL_TIMEOUT_SECONDS = '30'
+    POLL_INTERVAL_MS = '500'
+    POLL_MAX_ATTEMPTS = '120'
+    HTTP_TIMEOUT_SECONDS = '10'
+    E2E_READY_TIMEOUT_SECONDS = '60'
+    E2E_READY_INTERVAL_SECONDS = '2'
+  }
+  stages {
+    stage('Checkout') { steps { checkout scm } }
+    stage('Build') {
+      steps {
+        sh '''
+          set -eu
+          python3 -m venv "$CI_VENV"
+          "$CI_VENV/bin/python" -m pip install --disable-pip-version-check -r Reto_6/e2e-tests/requirements.txt
+          "$CI_VENV/bin/python" -m compileall -q Reto_6/e2e-tests Reto_7/ci/scripts
+        '''
+      }
+    }
+    stage('E2E Tests') {
+      steps {
+        withCredentials([usernamePassword(credentialsId: env.E2E_CREDENTIALS_ID, usernameVariable: 'ADMIN_EMAIL', passwordVariable: 'ADMIN_PASSWORD')]) {
+          script {
+            withEnv(["BASE_URL=${params.GATEWAY_BASE_URL}"]) {
+              int status = sh(returnStatus: true, script: '"$CI_VENV/bin/python" Reto_7/ci/scripts/run_e2e.py')
+              if (status == 20) { error('Entorno E2E no disponible o mal configurado; infraestructura debe proporcionar el Gateway') }
+              if (status == 21) { error('El runner E2E no existe o no pudo iniciarse; revisar el checkout y el agente Jenkins') }
+              env.BDD_REPORTS_EXPECTED = 'true'
+              if (status != 0) { error("La suite BDD falló con código ${status}") }
+            }
+          }
+        }
+      }
+    }
+  }
+  post {
+    always {
+      script {
+        if (env.BDD_REPORTS_EXPECTED == 'true') {
+          junit testResults: 'Reto_6/e2e-tests/reports/junit.xml', allowEmptyResults: false
+          cucumber buildStatus: 'UNSTABLE', fileIncludePattern: 'cucumber.json', jsonReportDirectory: 'Reto_6/e2e-tests/reports'
+          publishHTML target: [allowMissing: false, alwaysLinkToLastBuild: true, keepAll: true, reportDir: 'Reto_6/e2e-tests/reports', reportFiles: 'cucumber.html', reportName: 'Reto 7 - BDD Cucumber']
+          archiveArtifacts artifacts: 'Reto_6/e2e-tests/reports/junit.xml,Reto_6/e2e-tests/reports/cucumber.json,Reto_6/e2e-tests/reports/cucumber.html,Reto_6/e2e-tests/reports/junit_raw/*.xml', allowEmptyArchive: false
+        }
+      }
+    }
+    cleanup { deleteDir() }
+  }
+}
