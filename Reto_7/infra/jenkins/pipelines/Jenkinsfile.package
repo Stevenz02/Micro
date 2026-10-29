@@ -1,0 +1,94 @@
+// Job de empaquetado (contrato de Kevin): lo invocan los pipelines de servicio con
+//   RUN_PACKAGE=true  y  PACKAGE_JOB=reto7-package
+// Parámetros de entrada: COMPONENT_ID, SOURCE_DIR, SOURCE_BUILD.
+// Construye la imagen con su Dockerfile multi-stage, la etiqueta con <build>-<commit> y latest,
+// la verifica y la publica en el registry local (localhost:5000). Cualquier error -> FAILURE,
+// que se propaga al pipeline padre (wait: true, propagate: true).
+
+// Componente -> contexto de build y Dockerfile (algunos servicios necesitan contexto padre:
+// empleados importa Reto_1/app/models.py; auth y gateway importan Reto_5/shared).
+def COMPONENTS = [
+  'empleados'     : [dir: 'Reto_4/empleados',      context: '.',                     dockerfile: 'Reto_4/empleados/Dockerfile'],
+  'departamentos' : [dir: 'Reto_4/departamentos',  context: 'Reto_4/departamentos',  dockerfile: 'Reto_4/departamentos/Dockerfile'],
+  'perfiles'      : [dir: 'Reto_4/perfiles',       context: 'Reto_4/perfiles',       dockerfile: 'Reto_4/perfiles/Dockerfile'],
+  'auth'          : [dir: 'Reto_5/auth',           context: 'Reto_5',                dockerfile: 'Reto_5/auth/Dockerfile'],
+  'api-gateway'   : [dir: 'Reto_5/api-gateway',    context: 'Reto_5',                dockerfile: 'Reto_5/api-gateway/Dockerfile'],
+  'notificaciones': [dir: 'Reto_5/notificaciones', context: 'Reto_5/notificaciones', dockerfile: 'Reto_5/notificaciones/Dockerfile'],
+  'vacaciones'    : [dir: 'Reto_5/vacaciones',     context: 'Reto_5/vacaciones',     dockerfile: 'Reto_5/vacaciones/Dockerfile'],
+]
+
+pipeline {
+  agent any
+  options { timestamps() }
+  parameters {
+    string(name: 'COMPONENT_ID', defaultValue: 'empleados', description: 'empleados, departamentos, perfiles, auth, api-gateway, notificaciones o vacaciones')
+    string(name: 'SOURCE_DIR', defaultValue: 'Reto_4/empleados', description: 'Directorio del componente (debe coincidir con COMPONENT_ID)')
+    string(name: 'SOURCE_BUILD', defaultValue: 'manual', description: 'Número del build de servicio que pidió el paquete')
+    booleanParam(name: 'PUSH_TO_REGISTRY', defaultValue: true, description: 'Publicar la imagen en el registry local')
+  }
+  environment {
+    REGISTRY = "${env.REGISTRY_PUSH_HOST ?: 'localhost:5000'}"   // dirección vista por el Docker del host
+    REGISTRY_API = "${env.REGISTRY_API_URL ?: 'http://registry:5000'}" // dirección vista desde Jenkins
+  }
+  stages {
+    stage('Resolver componente') {
+      steps {
+        script {
+          def component = COMPONENTS[params.COMPONENT_ID?.trim()]
+          if (component == null) { error("COMPONENT_ID desconocido: '${params.COMPONENT_ID}'") }
+          if (params.SOURCE_DIR?.trim() != component.dir) {
+            error("SOURCE_DIR '${params.SOURCE_DIR}' no corresponde a ${params.COMPONENT_ID} (esperado ${component.dir})")
+          }
+          def commit = sh(returnStdout: true, script: 'git rev-parse --short=8 HEAD').trim()
+          env.BUILD_CONTEXT = component.context
+          env.DOCKERFILE = component.dockerfile
+          env.IMAGE_NAME = "reto7/${params.COMPONENT_ID.trim()}"
+          env.IMAGE_TAG = "${params.SOURCE_BUILD.trim()}-${commit}"
+          currentBuild.description = "${env.IMAGE_NAME}:${env.IMAGE_TAG}"
+          echo "Imagen: ${env.IMAGE_NAME}:${env.IMAGE_TAG} (Dockerfile ${env.DOCKERFILE}, contexto ${env.BUILD_CONTEXT})"
+        }
+      }
+    }
+    stage('Docker Build') {
+      steps {
+        sh '''
+          set -eu
+          docker build -f "$DOCKERFILE" \
+            --label "org.opencontainers.image.revision=$(git rev-parse HEAD)" \
+            --label "reto7.source-build=$SOURCE_BUILD" \
+            -t "$IMAGE_NAME:$IMAGE_TAG" -t "$IMAGE_NAME:latest" "$BUILD_CONTEXT"
+        '''
+      }
+    }
+    stage('Verificar imagen') {
+      steps {
+        sh '''
+          set -eu
+          docker image inspect "$IMAGE_NAME:$IMAGE_TAG" --format 'ID={{.Id}}  Tamaño={{.Size}} bytes  Creada={{.Created}}'
+          echo "✅ Imagen construida: $IMAGE_NAME:$IMAGE_TAG (también $IMAGE_NAME:latest)"
+        '''
+      }
+    }
+    stage('Publish') {
+      when { expression { params.PUSH_TO_REGISTRY } }
+      steps {
+        sh '''
+          set -eu
+          for tag in "$IMAGE_TAG" latest; do
+            docker tag "$IMAGE_NAME:$tag" "$REGISTRY/$IMAGE_NAME:$tag"
+            docker push "$REGISTRY/$IMAGE_NAME:$tag"
+          done
+          echo "Tags en el registry:"
+          curl -fsS "$REGISTRY_API/v2/$IMAGE_NAME/tags/list"
+          echo
+          echo "📤 Imagen publicada en registry: $REGISTRY/$IMAGE_NAME:$IMAGE_TAG"
+        '''
+      }
+    }
+  }
+  post {
+    success { echo "✅ Package OK: ${env.IMAGE_NAME}:${env.IMAGE_TAG}" }
+    failure { echo '❌ Package falló: revisar el Dockerfile o el push al registry' }
+    cleanup { deleteDir() }
+  }
+}

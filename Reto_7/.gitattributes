@@ -1,0 +1,7 @@
+# Scripts que se ejecutan en Linux (contenedores/Jenkins): siempre LF
+*.sh text eol=lf
+*.py text eol=lf
+Jenkinsfile* text eol=lf
+*.groovy text eol=lf
+*.yaml text eol=lf
+*.yml text eol=lf

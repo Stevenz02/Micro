@@ -1,0 +1,82 @@
+# Jenkins Configuration as Code (JCasC) - Reto 7
+# Al arrancar, Jenkins queda configurado sin tocar la interfaz: usuario admin, credenciales,
+# servidor SonarQube y los jobs de pipeline (job-dsl). Los valores sensibles llegan por
+# variables de entorno del docker-compose (.env) o por archivo (token de Sonar).
+jenkins:
+  systemMessage: "Reto 7 - Integración Continua (Jenkins + SonarQube). Jobs creados por JCasC."
+  numExecutors: 4            # los pipelines de servicio invocan Package y E2E como jobs hijos
+  mode: NORMAL
+  securityRealm:
+    local:
+      allowsSignup: false
+      users:
+        - id: "${JENKINS_ADMIN_ID}"
+          password: "${JENKINS_ADMIN_PASSWORD}"
+  authorizationStrategy:
+    loggedInUsersCanDoAnything:
+      allowAnonymousRead: false
+
+credentials:
+  system:
+    domainCredentials:
+      - credentials:
+          # Token generado automáticamente por el contenedor sonar-init (nunca se versiona)
+          - string:
+              scope: GLOBAL
+              id: "sonarqube-token"
+              description: "Token de análisis SonarQube (generado por sonar-init)"
+              secret: "${readFile:/run/reto7/sonar-token}"
+          # Contrato de Kevin: credencial username/password para el ADMIN de la suite BDD
+          - usernamePassword:
+              scope: GLOBAL
+              id: "reto7-e2e-admin"
+              description: "ADMIN semilla del sistema para los escenarios BDD"
+              username: "${E2E_ADMIN_EMAIL}"
+              password: "${E2E_ADMIN_PASSWORD}"
+
+unclassified:
+  location:
+    url: "http://localhost:9090/"
+  sonarGlobalConfiguration:
+    buildWrapperEnabled: true
+    installations:
+      # Contrato de Kevin: withSonarQubeEnv('sonarqube-reto7')
+      - name: "sonarqube-reto7"
+        serverUrl: "http://sonarqube:9000"
+        credentialsId: "sonarqube-token"
+
+jobs:
+  - script: |
+      def repo = '${REPO_URL}'
+      def branch = '${REPO_BRANCH}'
+      def pipelines = [
+        ['reto7-verificacion-docker', 'Reto_7/infra/jenkins/pipelines/Jenkinsfile.verificacion', 'Punto 1: verifica que Jenkins usa el Docker del host y tiene las herramientas.'],
+        ['reto7-empleados',       'Reto_7/jenkins/Jenkinsfile.empleados',       'Empleados (Python/pytest): Build, Test + Coverage, SonarQube, Quality Gate, Package, E2E.'],
+        ['reto7-auth',            'Reto_7/jenkins/Jenkinsfile.auth',            'Auth (Python/pytest).'],
+        ['reto7-api-gateway',     'Reto_7/jenkins/Jenkinsfile.api-gateway',     'API Gateway (Python/pytest).'],
+        ['reto7-departamentos',   'Reto_7/jenkins/Jenkinsfile.departamentos',   'Departamentos (Node.js/node:test).'],
+        ['reto7-perfiles',        'Reto_7/jenkins/Jenkinsfile.perfiles',        'Perfiles (Go).'],
+        ['reto7-notificaciones',  'Reto_7/jenkins/Jenkinsfile.notificaciones',  'Notificaciones (Java 21/Maven).'],
+        ['reto7-vacaciones',      'Reto_7/jenkins/Jenkinsfile.vacaciones',      'Vacaciones (.NET 8/xUnit).'],
+        ['reto7-integracion-e2e', 'Reto_7/jenkins/Jenkinsfile.integration',     'Suite BDD del Reto 6 contra un Gateway ya desplegado (publica JUnit, Cucumber y HTML).'],
+        ['reto7-package',         'Reto_7/infra/jenkins/pipelines/Jenkinsfile.package',         'Package: docker build (tag BUILD-commit y latest) y push al registry local.'],
+        ['reto7-despliegue-e2e',  'Reto_7/infra/jenkins/pipelines/Jenkinsfile.despliegue-e2e',  'Deploy -> E2E BDD -> logs -> down -v. Usar como E2E_JOB de los pipelines de servicio.'],
+      ]
+      pipelines.each { p ->
+        pipelineJob(p[0]) {
+          description(p[2])
+          logRotator { numToKeep(20) }
+          definition {
+            cpsScm {
+              scm {
+                git {
+                  remote { url(repo) }
+                  branches(branch)
+                }
+              }
+              scriptPath(p[1])
+              lightweight(true)
+            }
+          }
+        }
+      }

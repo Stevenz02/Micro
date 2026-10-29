@@ -1,0 +1,76 @@
+// Despliegue E2E (infraestructura): Deploy (docker compose up) -> E2E BDD -> logs -> Cleanup (down -v).
+// Lo invocan los pipelines de servicio con TRIGGER_E2E=true y E2E_JOB=reto7-despliegue-e2e,
+// o se ejecuta a mano. La suite BDD y la publicación de sus reportes (JUnit, Cucumber, HTML)
+// las hace el job de Kevin reto7-integracion-e2e, que este job invoca con el Gateway desplegado.
+//
+// Detalle Docker-out-of-Docker: Jenkins usa el Docker del host, que no ve el workspace del
+// contenedor. Por eso se usa un override (compose.ci.yml) que mete init.sql/setup.py dentro de
+// imágenes en vez de bind mounts, y Jenkins se conecta a la red del sistema para llegar al Gateway.
+pipeline {
+  agent any
+  options { timestamps(); disableConcurrentBuilds(); timeout(time: 60, unit: 'MINUTES') }
+  parameters {
+    string(name: 'UPSTREAM_COMPONENT', defaultValue: 'manual', description: 'Componente que solicitó la ejecución')
+    string(name: 'UPSTREAM_BUILD', defaultValue: '', description: 'Build origen para trazabilidad')
+    string(name: 'E2E_JOB', defaultValue: 'reto7-integracion-e2e', description: 'Job que ejecuta y publica la suite BDD')
+  }
+  environment {
+    COMPOSE_PROJECT_NAME = 'reto7-e2e'
+    COMPOSE_CMD = 'docker compose -p reto7-e2e --env-file Reto_6/.env.example -f Reto_6/docker-compose.yml -f Reto_7/infra/e2e/compose.ci.yml'
+    SYSTEM_NETWORK = 'reto7-e2e_microservices-network'
+    JENKINS_CONTAINER = "${env.JENKINS_CONTAINER_NAME ?: 'jenkins'}"
+    // Puertos distintos a los del Reto 5/6 para no chocar si alguien los tiene levantados
+    GATEWAY_PORT = '18080'
+    RABBITMQ_MANAGEMENT_PORT = '25672'
+  }
+  stages {
+    stage('Deploy') {
+      steps {
+        sh '''
+          set -eu
+          $COMPOSE_CMD down -v --remove-orphans || true   # por si quedó algo de una ejecución abortada
+          $COMPOSE_CMD up -d --build --wait --wait-timeout 600
+          $COMPOSE_CMD ps
+        '''
+      }
+    }
+    stage('Conectar Jenkins a la red del sistema') {
+      steps {
+        sh '''
+          set -eu
+          docker network connect "$SYSTEM_NETWORK" "$JENKINS_CONTAINER" 2>/dev/null || echo "Jenkins ya estaba conectado a $SYSTEM_NETWORK"
+        '''
+      }
+    }
+    stage('E2E Tests') {
+      steps {
+        script {
+          def run = build job: params.E2E_JOB, wait: true, propagate: false, parameters: [
+            string(name: 'GATEWAY_BASE_URL', value: 'http://api-gateway:8080'),
+            string(name: 'UPSTREAM_COMPONENT', value: params.UPSTREAM_COMPONENT),
+            string(name: 'UPSTREAM_BUILD', value: params.UPSTREAM_BUILD ?: env.BUILD_NUMBER)
+          ]
+          currentBuild.description = "BDD: ${params.E2E_JOB} #${run.number} -> ${run.result}"
+          echo "Reportes BDD (JUnit, Cucumber Reports, HTML): ${run.absoluteUrl}"
+          if (run.result != 'SUCCESS') { error("La suite BDD terminó en ${run.result}; ver ${run.absoluteUrl}") }
+        }
+      }
+    }
+  }
+  post {
+    always {
+      // Diagnóstico: logs del sistema como artefacto descargable
+      sh '''
+        $COMPOSE_CMD ps -a > docker-ps.txt 2>&1 || true
+        $COMPOSE_CMD logs --no-color --timestamps > docker-logs.txt 2>&1 || true
+      '''
+      archiveArtifacts artifacts: 'docker-logs.txt,docker-ps.txt', allowEmptyArchive: true
+      // Limpieza: desconectar Jenkins y borrar el sistema con sus volúmenes (aislamiento de datos)
+      sh '''
+        docker network disconnect "$SYSTEM_NETWORK" "$JENKINS_CONTAINER" 2>/dev/null || true
+        $COMPOSE_CMD down -v --remove-orphans || true
+      '''
+    }
+    cleanup { deleteDir() }
+  }
+}

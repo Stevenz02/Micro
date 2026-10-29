@@ -1,0 +1,114 @@
+# Reto 7 - Infraestructura de Integración Continua
+#   Jenkins  -> http://localhost:9090   (usuario/clave de JENKINS_ADMIN_* en .env)
+#   SonarQube-> http://localhost:9000   (admin / SONAR_ADMIN_PASSWORD)
+#   Registry -> localhost:5000          (registry local de imágenes Docker)
+#
+#   cd Reto_7 ; Copy-Item .env.example .env ; docker compose up --build -d
+#
+# El sistema de negocio NO vive en este compose: lo despliega el propio pipeline
+# (job reto7-despliegue-e2e) como proyecto aparte "reto7-e2e" y lo destruye con down -v.
+# Si estuviera aquí, el `down -v` del pipeline apagaría también a Jenkins.
+services:
+  # ------------------------------------------------------------------ SonarQube
+  sonar-db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: sonar
+      POSTGRES_USER: sonar
+      POSTGRES_PASSWORD: ${SONAR_DB_PASSWORD:?Configure SONAR_DB_PASSWORD en .env}
+    volumes: [sonar_db_data:/var/lib/postgresql/data]
+    networks: [ci-network]
+    healthcheck: { test: [CMD-SHELL, "pg_isready -U sonar -d sonar"], interval: 5s, timeout: 5s, retries: 15 }
+
+  sonarqube:
+    image: ${SONARQUBE_IMAGE:-sonarqube:lts-community}
+    container_name: sonarqube
+    restart: unless-stopped
+    depends_on: { sonar-db: { condition: service_healthy } }
+    environment:
+      SONAR_JDBC_URL: jdbc:postgresql://sonar-db:5432/sonar
+      SONAR_JDBC_USERNAME: sonar
+      SONAR_JDBC_PASSWORD: ${SONAR_DB_PASSWORD}
+      # Docker Desktop/WSL2 trae vm.max_map_count bajo: sin esto Elasticsearch no arranca
+      SONAR_SEARCH_JAVAADDITIONALOPTS: "-Dnode.store.allow_mmap=false"
+      SONAR_ES_BOOTSTRAP_CHECKS_DISABLE: "true"
+    ports: ["9000:9000"]
+    volumes:
+      - sonarqube_data:/opt/sonarqube/data
+      - sonarqube_logs:/opt/sonarqube/logs
+      - sonarqube_extensions:/opt/sonarqube/extensions
+    networks: [ci-network]
+
+  # Transitorio: configura SonarQube por API (contraseña, token, Quality Gate 70 %, proyectos, webhook)
+  sonar-init:
+    image: python:3.12-alpine
+    restart: "no"
+    depends_on: { sonarqube: { condition: service_started } }
+    environment:
+      SONAR_URL: http://sonarqube:9000
+      SONAR_ADMIN_PASSWORD: ${SONAR_ADMIN_PASSWORD:?Configure SONAR_ADMIN_PASSWORD en .env}
+      SONAR_MIN_COVERAGE: ${SONAR_MIN_COVERAGE:-70}
+      JENKINS_WEBHOOK_URL: http://jenkins:8080/sonarqube-webhook/
+      TOKEN_FILE: /run/reto7/sonar-token
+    volumes:
+      - ./infra/sonarqube/init_sonar.py:/init_sonar.py:ro
+      - ci_secrets:/run/reto7
+    command: [python, -u, /init_sonar.py]
+    networks: [ci-network]
+
+  # ------------------------------------------------------------------ Registry
+  registry:
+    image: registry:2
+    container_name: docker-registry
+    restart: unless-stopped
+    ports: ["5000:5000"]
+    volumes: [registry_data:/var/lib/registry]
+    networks: [ci-network]
+
+  # ------------------------------------------------------------------ Jenkins
+  jenkins:
+    build:
+      context: ./infra/jenkins
+      dockerfile: Dockerfile
+    container_name: jenkins          # el job de despliegue lo conecta por nombre a la red del sistema
+    restart: unless-stopped
+    depends_on:
+      sonar-init: { condition: service_completed_successfully }   # el token ya existe al arrancar
+      registry: { condition: service_started }
+    ports:
+      - "9090:8080"     # interfaz web
+      - "50000:50000"   # agentes
+    environment:
+      JAVA_OPTS: >-
+        -Djenkins.install.runSetupWizard=false
+        -Dhudson.plugins.git.GitSCM.ALLOW_LOCAL_CHECKOUT=true
+      CASC_JENKINS_CONFIG: /var/jenkins_home/casc_configs
+      JENKINS_ADMIN_ID: ${JENKINS_ADMIN_ID:-admin}
+      JENKINS_ADMIN_PASSWORD: ${JENKINS_ADMIN_PASSWORD:?Configure JENKINS_ADMIN_PASSWORD en .env}
+      E2E_ADMIN_EMAIL: ${E2E_ADMIN_EMAIL:?Configure E2E_ADMIN_EMAIL en .env}
+      E2E_ADMIN_PASSWORD: ${E2E_ADMIN_PASSWORD:?Configure E2E_ADMIN_PASSWORD en .env}
+      REPO_URL: ${REPO_URL:-file:///repo}
+      REPO_BRANCH: ${REPO_BRANCH:-*/main}
+      JENKINS_CONTAINER_NAME: jenkins
+      REGISTRY_PUSH_HOST: localhost:5000        # el Docker del host publica en su localhost:5000
+      REGISTRY_API_URL: http://registry:5000    # Jenkins consulta el registry por la red interna
+    volumes:
+      - jenkins_data:/var/jenkins_home
+      - /var/run/docker.sock:/var/run/docker.sock          # Docker Socket Mount (no DinD)
+      - ./infra/jenkins/casc.yaml:/var/jenkins_home/casc_configs/jenkins.yaml:ro
+      - ci_secrets:/run/reto7:ro                           # token de SonarQube
+      - ..:/repo:ro                                        # el repo local como SCM (REPO_URL=file:///repo)
+    networks: [ci-network]
+
+networks:
+  ci-network: { name: reto7-ci-network }
+
+volumes:
+  jenkins_data:
+  sonarqube_data:
+  sonarqube_logs:
+  sonarqube_extensions:
+  sonar_db_data:
+  registry_data:
+  ci_secrets:

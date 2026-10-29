@@ -1,0 +1,70 @@
+# Override de CI para desplegar el sistema del Reto 6 DESDE Jenkins (Docker-out-of-Docker).
+#
+# Problema: Jenkins usa el Docker del host vía socket. Los bind mounts del compose del Reto 6
+# (init.sql, setup.py) apuntan a rutas del workspace de Jenkins, que el daemon del host no ve.
+# Solución: en CI esos archivos se copian DENTRO de imágenes pequeñas (dockerfile_inline); el
+# contexto de build sí viaja del cliente al daemon. Los demás servicios no cambian.
+#
+# Se usa así (lo hace Jenkinsfile.despliegue-e2e):
+#   docker compose -p reto7-e2e --env-file Reto_6/.env.example \
+#     -f Reto_6/docker-compose.yml -f Reto_7/infra/e2e/compose.ci.yml up -d --build --wait
+# Las rutas relativas se resuelven desde Reto_6/ (directorio del primer archivo).
+services:
+  rabbitmq-setup:
+    image: !reset null
+    build:
+      context: ../Reto_5/rabbitmq
+      dockerfile_inline: |
+        FROM python:3.12-alpine
+        COPY setup.py /setup.py
+    volumes: !reset []
+
+  database-empleados:
+    image: !reset null
+    build:
+      context: ../Reto_4/empleados
+      dockerfile_inline: |
+        FROM postgres:16-alpine
+        COPY init.sql /docker-entrypoint-initdb.d/01-init.sql
+    volumes: !override
+      - vol-empleados:/var/lib/postgresql/data
+
+  database-departamentos:
+    image: !reset null
+    build:
+      context: ../Reto_4/departamentos
+      dockerfile_inline: |
+        FROM postgres:16-alpine
+        COPY init.sql /docker-entrypoint-initdb.d/01-init.sql
+    volumes: !override
+      - vol-departamentos:/var/lib/postgresql/data
+
+  database-perfiles:
+    image: !reset null
+    build:
+      context: ../Reto_4/perfiles
+      dockerfile_inline: |
+        FROM postgres:16-alpine
+        COPY init.sql /docker-entrypoint-initdb.d/01-init.sql
+    volumes: !override
+      - vol-perfiles:/var/lib/postgresql/data
+
+  database-notificaciones:
+    image: !reset null
+    build:
+      context: ../Reto_5/notificaciones
+      dockerfile_inline: |
+        FROM postgres:16-alpine
+        COPY init.sql /docker-entrypoint-initdb.d/01-init.sql
+    volumes: !override
+      - vol-notificaciones:/var/lib/postgresql/data
+
+  database-vacaciones:
+    image: !reset null
+    build:
+      context: ../Reto_5/vacaciones
+      dockerfile_inline: |
+        FROM postgres:16-alpine
+        COPY init.sql /docker-entrypoint-initdb.d/01-init.sql
+    volumes: !override
+      - vol-vacaciones:/var/lib/postgresql/data

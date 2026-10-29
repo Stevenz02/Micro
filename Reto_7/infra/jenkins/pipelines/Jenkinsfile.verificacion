@@ -1,0 +1,31 @@
+// Punto 1: pipeline de verificación. Confirma que Jenkins controla el Docker del host
+// (socket montado) y que las herramientas que usan los Jenkinsfiles están disponibles.
+pipeline {
+  agent any
+  options { timestamps() }
+  stages {
+    stage('Verificación') {
+      steps {
+        echo '✅ Jenkins está correctamente configurado'
+        sh 'docker --version'
+        sh 'docker ps'
+        sh 'docker compose version'
+      }
+    }
+    stage('Herramientas') {
+      steps {
+        sh '''
+          set -eu
+          python3 --version
+          node --version && npm --version
+          go version
+          java -version
+          mvn -v | head -1
+          dotnet --version
+          sonar-scanner --version | tail -n 3
+          command -v dotnet-sonarscanner && echo "SonarScanner for .NET disponible"
+        '''
+      }
+    }
+  }
+}
