@@ -21,6 +21,8 @@ RUN set -eux; \
     apt-get update; \
     apt-get install -y --no-install-recommends ca-certificates curl gnupg unzip xz-utils git \
         python3 python3-venv python3-pip gosu; \
+    # .NET necesita ICU (globalización); el nombre del paquete cambia con la versión de Debian
+    apt-get install -y --no-install-recommends "$(apt-cache search --names-only '^libicu[0-9]+$' | awk '{print $1}' | sort -V | tail -n1)"; \
     install -m 0755 -d /etc/apt/keyrings; \
     curl -fsSL https://download.docker.com/linux/debian/gpg -o /etc/apt/keyrings/docker.asc; \
     chmod a+r /etc/apt/keyrings/docker.asc; \
