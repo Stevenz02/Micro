@@ -28,6 +28,8 @@ pipeline {
               --input Reto_4/perfiles/reports/coverage.out \
               --output Reto_4/perfiles/reports/coverage.xml \
               --source Reto_4/perfiles
+            # SonarQube resuelve rutas desde la raíz del repo: reto4/perfiles/x.go -> Reto_4/perfiles/x.go
+            sed 's#^reto4/perfiles/#Reto_4/perfiles/#' Reto_4/perfiles/reports/coverage.out > Reto_4/perfiles/reports/coverage.sonar.out
           '''
           int reportStatus = sh(
             returnStatus: true,

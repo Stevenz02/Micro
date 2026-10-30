@@ -22,7 +22,9 @@ services:
     healthcheck: { test: [CMD-SHELL, "pg_isready -U sonar -d sonar"], interval: 5s, timeout: 5s, retries: 15 }
 
   sonarqube:
-    image: ${SONARQUBE_IMAGE:-sonarqube:lts-community}
+    # Community Build actual: la 9.9 (lts-community) está descontinuada y el SonarScanner for .NET
+    # actual exige SonarQube 2025.1/25.1 o superior
+    image: ${SONARQUBE_IMAGE:-sonarqube:community}
     container_name: sonarqube
     restart: unless-stopped
     depends_on: { sonar-db: { condition: service_healthy } }
