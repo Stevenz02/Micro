@@ -9,7 +9,6 @@ pipeline {
   }
   environment {
     CI_VENV = '.ci/venv-empleados'
-    TESTS_STARTED = 'false'
     SONARQUBE_ENV = 'sonarqube-reto7'
   }
   stages {

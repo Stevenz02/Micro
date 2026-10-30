@@ -7,7 +7,7 @@ pipeline {
     booleanParam(name: 'TRIGGER_E2E', defaultValue: false, description: 'Dispara una única ejecución coordinada del pipeline E2E')
     string(name: 'E2E_JOB', defaultValue: 'reto7-integracion-e2e', description: 'Job coordinador de BDD')
   }
-  environment { CI_VENV = '.ci/venv-gateway'; TESTS_STARTED = 'false'; SONARQUBE_ENV = 'sonarqube-reto7' }
+  environment { CI_VENV = '.ci/venv-gateway'; SONARQUBE_ENV = 'sonarqube-reto7' }
   stages {
     stage('Checkout') { steps { checkout scm } }
     stage('Build') {
