@@ -29,7 +29,10 @@ pipeline {
         sh '''
           set -eu
           $COMPOSE_CMD down -v --remove-orphans || true   # por si quedó algo de una ejecución abortada
-          $COMPOSE_CMD up -d --build --wait --wait-timeout 600
+          # Las imagenes se construyen y validan en el job de empaquetado.
+          # En Docker Desktop, volver a ejecutar buildx bake aqui puede quedar
+          # esperando aun despues de terminar todas las imagenes.
+          $COMPOSE_CMD up -d --no-build --wait --wait-timeout 600
           $COMPOSE_CMD ps
         '''
       }

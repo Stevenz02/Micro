@@ -5,7 +5,7 @@ pipeline {
     booleanParam(name: 'RUN_PACKAGE', defaultValue: false, description: 'Invoca el job de empaquetado mantenido por infraestructura')
     string(name: 'PACKAGE_JOB', defaultValue: '', description: 'Nombre completo del job externo de Package')
     booleanParam(name: 'TRIGGER_E2E', defaultValue: false, description: 'Dispara una única ejecución coordinada del pipeline E2E')
-    string(name: 'E2E_JOB', defaultValue: 'reto7-integracion-e2e', description: 'Job coordinador de BDD')
+    string(name: 'E2E_JOB', defaultValue: 'reto7-despliegue-e2e', description: 'Job coordinador que despliega y ejecuta BDD')
   }
   environment { CI_VENV = '.ci/venv-auth'; SONARQUBE_ENV = 'sonarqube-reto7' }
   stages {

@@ -2,6 +2,7 @@
 
 import html
 import json
+from copy import deepcopy
 import subprocess
 import sys
 from pathlib import Path
@@ -80,6 +81,27 @@ pre{{flex-basis:100%;white-space:pre-wrap;background:#fff3f1;color:#912018;paddi
     (REPORTS / "cucumber.html").write_text(page, encoding="utf-8")
 
 
+def normalize_cucumber_report(value):
+    """Adapta la salida de Behave al esquema que consume Cucumber Reports."""
+    if isinstance(value, list):
+        for item in value:
+            normalize_cucumber_report(item)
+        return
+    if not isinstance(value, dict):
+        return
+    if "elements" in value and "location" in value and not value.get("uri"):
+        # Cucumber Reports usa uri para nombrar la pagina de cada feature.
+        value["uri"] = str(value["location"]).rsplit(":", 1)[0]
+    for key, item in list(value.items()):
+        if key in {"description", "error_message"} and isinstance(item, list):
+            value[key] = "\n".join(str(line) for line in item)
+        elif key == "duration" and isinstance(item, (int, float)):
+            # Behave usa segundos; el formato Cucumber JSON usa nanosegundos.
+            value[key] = round(item * 1_000_000_000)
+        else:
+            normalize_cucumber_report(item)
+
+
 def main():
     load_dotenv(ROOT / ".env")
     REPORTS.mkdir(exist_ok=True)
@@ -100,7 +122,14 @@ def main():
         consolidate_junit()
     json_file = REPORTS / "cucumber.json"
     if json_file.exists():
-        render_html(json.loads(json_file.read_text(encoding="utf-8")))
+        features = json.loads(json_file.read_text(encoding="utf-8"))
+        render_html(features)
+        plugin_report = deepcopy(features)
+        normalize_cucumber_report(plugin_report)
+        json_file.write_text(
+            json.dumps(plugin_report, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
     return result.returncode
 
 
