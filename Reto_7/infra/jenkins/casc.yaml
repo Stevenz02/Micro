@@ -62,16 +62,28 @@ jobs:
         ['reto7-package',         'Reto_7/infra/jenkins/pipelines/Jenkinsfile.package',         'Package: docker build (tag BUILD-commit y latest) y push al registry local.'],
         ['reto7-despliegue-e2e',  'Reto_7/infra/jenkins/pipelines/Jenkinsfile.despliegue-e2e',  'Deploy -> E2E BDD -> logs -> down -v. Usar como E2E_JOB de los pipelines de servicio.'],
       ]
+      // Disparo automático (punto 5.4 opcional): Jenkins revisa el repo cada minuto (pollSCM) y
+      // construye SOLO si el commit nuevo toca las rutas del servicio (monorepo: evita lanzar 7 jobs).
+      def autoTrigger = [
+        'reto7-empleados'    : 'Reto_4/empleados/.*\nReto_4/tests/.*\nReto_1/app/.*',
+        'reto7-departamentos': 'Reto_4/departamentos/.*',
+      ]
       pipelines.each { p ->
         pipelineJob(p[0]) {
           description(p[2])
           logRotator { numToKeep(20) }
+          if (autoTrigger[p[0]]) {
+            properties { pipelineTriggers { triggers { pollSCM { scmpoll_spec('* * * * *') } } } }
+          }
           definition {
             cpsScm {
               scm {
                 git {
                   remote { url(repo) }
                   branches(branch)
+                  if (autoTrigger[p[0]]) {
+                    extensions { pathRestriction(autoTrigger[p[0]], '') }
+                  }
                 }
               }
               scriptPath(p[1])
