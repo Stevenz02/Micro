@@ -45,3 +45,4 @@ export function createApp(repository) {
 
 // Demo CI (Reto 7): este cambio dispara automaticamente el pipeline por pollSCM
 // demo CI: disparo automatico
+// demo 4: disparo ultimo
