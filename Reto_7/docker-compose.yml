@@ -55,6 +55,7 @@ services:
       SONAR_ADMIN_PASSWORD: ${SONAR_ADMIN_PASSWORD:?Configure SONAR_ADMIN_PASSWORD en .env}
       SONAR_MIN_COVERAGE: ${SONAR_MIN_COVERAGE:-70}
       JENKINS_WEBHOOK_URL: http://jenkins:8080/sonarqube-webhook/
+      SONAR_PUBLIC_URL: http://localhost:9000   # URL de los enlaces SonarQube que muestra Jenkins
       TOKEN_FILE: /run/reto7/sonar-token
     volumes:
       - ./infra/sonarqube/init_sonar.py:/init_sonar.py:ro

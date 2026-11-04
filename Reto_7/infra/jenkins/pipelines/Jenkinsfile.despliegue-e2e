@@ -1,29 +1,46 @@
-// Despliegue E2E (infraestructura): Deploy (docker compose up) -> E2E BDD -> logs -> Cleanup (down -v).
-// Lo invocan los pipelines de servicio con TRIGGER_E2E=true y E2E_JOB=reto7-despliegue-e2e,
-// o se ejecuta a mano. La suite BDD y la publicación de sus reportes (JUnit, Cucumber, HTML)
-// las hace el job de Kevin reto7-integracion-e2e, que este job invoca con el Gateway desplegado.
+// Despliegue E2E (Punto 4): Deploy (docker compose up) -> E2E BDD -> publicar reportes -> logs -> Cleanup (down -v).
+// Todo en la misma página del build: Test Result (JUnit), Cucumber Reports (escenarios en español),
+// reporte HTML navegable y docker-logs.txt como artefacto.
+// Lo invocan los pipelines de servicio con TRIGGER_E2E=true y E2E_JOB=reto7-despliegue-e2e, o se corre a mano.
 //
-// Detalle Docker-out-of-Docker: Jenkins usa el Docker del host, que no ve el workspace del
-// contenedor. Por eso se usa un override (compose.ci.yml) que mete init.sql/setup.py dentro de
-// imágenes en vez de bind mounts, y Jenkins se conecta a la red del sistema para llegar al Gateway.
+// Docker-out-of-Docker: Jenkins usa el Docker del host, que no ve el workspace del contenedor. Por eso
+// compose.ci.yml mete init.sql/setup.py dentro de imágenes en vez de bind mounts, y Jenkins se conecta a
+// la red del sistema para llegar al Gateway por su nombre (http://api-gateway:8080).
 pipeline {
   agent any
   options { timestamps(); disableConcurrentBuilds(); timeout(time: 60, unit: 'MINUTES') }
   parameters {
     string(name: 'UPSTREAM_COMPONENT', defaultValue: 'manual', description: 'Componente que solicitó la ejecución')
     string(name: 'UPSTREAM_BUILD', defaultValue: '', description: 'Build origen para trazabilidad')
-    string(name: 'E2E_JOB', defaultValue: 'reto7-integracion-e2e', description: 'Job que ejecuta y publica la suite BDD')
   }
   environment {
-    COMPOSE_PROJECT_NAME = 'reto7-e2e'
     COMPOSE_CMD = 'docker compose -p reto7-e2e --env-file Reto_6/.env.example -f Reto_6/docker-compose.yml -f Reto_7/infra/e2e/compose.ci.yml'
     SYSTEM_NETWORK = 'reto7-e2e_microservices-network'
     JENKINS_CONTAINER = "${env.JENKINS_CONTAINER_NAME ?: 'jenkins'}"
     // Puertos distintos a los del Reto 5/6 para no chocar si alguien los tiene levantados
     GATEWAY_PORT = '18080'
     RABBITMQ_MANAGEMENT_PORT = '25672'
+    // Suite BDD del Reto 6 (mismos valores que Jenkinsfile.integration)
+    CI_VENV = '.ci/venv-e2e'
+    BASE_URL = 'http://api-gateway:8080'
+    POLL_TIMEOUT_SECONDS = '30'
+    POLL_INTERVAL_MS = '500'
+    POLL_MAX_ATTEMPTS = '120'
+    HTTP_TIMEOUT_SECONDS = '10'
+    E2E_READY_TIMEOUT_SECONDS = '120'
+    E2E_READY_INTERVAL_SECONDS = '2'
+    REPORTS = 'Reto_6/e2e-tests/reports'
   }
   stages {
+    stage('Preparar suite BDD') {
+      steps {
+        sh '''
+          set -eu
+          python3 -m venv "$CI_VENV"
+          "$CI_VENV/bin/python" -m pip install --disable-pip-version-check -q -r Reto_6/e2e-tests/requirements.txt
+        '''
+      }
+    }
     stage('Deploy') {
       steps {
         sh '''
@@ -31,28 +48,37 @@ pipeline {
           $COMPOSE_CMD down -v --remove-orphans || true   # por si quedó algo de una ejecución abortada
           $COMPOSE_CMD up -d --build --wait --wait-timeout 600
           $COMPOSE_CMD ps
-        '''
-      }
-    }
-    stage('Conectar Jenkins a la red del sistema') {
-      steps {
-        sh '''
-          set -eu
-          docker network connect "$SYSTEM_NETWORK" "$JENKINS_CONTAINER" 2>/dev/null || echo "Jenkins ya estaba conectado a $SYSTEM_NETWORK"
+          docker network connect "$SYSTEM_NETWORK" "$JENKINS_CONTAINER" 2>/dev/null || echo "Jenkins ya estaba en $SYSTEM_NETWORK"
         '''
       }
     }
     stage('E2E Tests') {
       steps {
-        script {
-          def run = build job: params.E2E_JOB, wait: true, propagate: false, parameters: [
-            string(name: 'GATEWAY_BASE_URL', value: 'http://api-gateway:8080'),
-            string(name: 'UPSTREAM_COMPONENT', value: params.UPSTREAM_COMPONENT),
-            string(name: 'UPSTREAM_BUILD', value: params.UPSTREAM_BUILD ?: env.BUILD_NUMBER)
-          ]
-          currentBuild.description = "BDD: ${params.E2E_JOB} #${run.number} -> ${run.result}"
-          echo "Reportes BDD (JUnit, Cucumber Reports, HTML): ${run.absoluteUrl}"
-          if (run.result != 'SUCCESS') { error("La suite BDD terminó en ${run.result}; ver ${run.absoluteUrl}") }
+        withCredentials([usernamePassword(credentialsId: 'reto7-e2e-admin', usernameVariable: 'ADMIN_EMAIL', passwordVariable: 'ADMIN_PASSWORD')]) {
+          script {
+            // run_e2e.py espera el health del Gateway y ejecuta Reto_6/e2e-tests/run.py (Behave)
+            int status = sh(returnStatus: true, script: '"$CI_VENV/bin/python" Reto_7/ci/scripts/run_e2e.py')
+            if (status == 20) { error('El Gateway no respondió: el sistema no quedó disponible para el E2E') }
+            if (status == 21) { error('No se pudo iniciar el runner BDD') }
+            env.BDD_RAN = 'true'
+            if (status != 0) { error("Fallaron escenarios BDD (código ${status}); ver Cucumber Reports y Test Result") }
+          }
+        }
+      }
+      post {
+        always {
+          script {
+            if (env.BDD_RAN == 'true') {
+              // Behave -> Cucumber JSON (formato del plugin Cucumber Reports)
+              sh 'python3 Reto_7/infra/jenkins/scripts/behave_to_cucumber.py "$REPORTS/cucumber.json" "$REPORTS/cucumber-jenkins.json"'
+              junit testResults: "${env.REPORTS}/junit.xml", allowEmptyResults: false
+              cucumber buildStatus: 'FAILURE', fileIncludePattern: 'cucumber-jenkins.json', jsonReportDirectory: env.REPORTS,
+                       reportTitle: 'Reto 7 - Escenarios BDD', sortingMethod: 'ALPHABETICAL'
+              publishHTML target: [allowMissing: false, alwaysLinkToLastBuild: true, keepAll: true,
+                                   reportDir: env.REPORTS, reportFiles: 'cucumber.html', reportName: 'Reporte BDD (HTML)']
+              archiveArtifacts artifacts: "${env.REPORTS}/junit.xml,${env.REPORTS}/cucumber.json,${env.REPORTS}/cucumber-jenkins.json,${env.REPORTS}/cucumber.html", allowEmptyArchive: false
+            }
+          }
         }
       }
     }

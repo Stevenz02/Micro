@@ -26,6 +26,7 @@ TOKEN_NAME = "jenkins-reto7"
 WEBHOOK_URL = os.environ.get("JENKINS_WEBHOOK_URL", "http://jenkins:8080/sonarqube-webhook/")
 GATE = os.environ.get("SONAR_GATE_NAME", "Reto 7 - Cobertura 70")
 MIN_COVERAGE = os.environ.get("SONAR_MIN_COVERAGE", "70")
+PUBLIC_URL = os.environ.get("SONAR_PUBLIC_URL", "http://localhost:9000")
 
 # Condiciones del gate: cobertura global (lo que pide el reto) + las de código nuevo de "Sonar way"
 CONDITIONS = [
@@ -165,6 +166,16 @@ def ensure_projects(auth):
         call("POST", "/api/qualitygates/select", {"gateName": GATE, "projectKey": key}, auth)
 
 
+def ensure_public_url(auth):
+    """Los enlaces que Jenkins muestra (dashboard, Quality Gate) usan esta URL y no http://sonarqube:9000,
+    que solo existe dentro de la red de Docker y el navegador no resuelve."""
+    status, body = call("POST", "/api/settings/set", {"key": "sonar.core.serverBaseURL", "value": PUBLIC_URL}, auth)
+    if status not in (200, 204):
+        log(f"ADVERTENCIA: no se pudo fijar la URL pública: {status} {body}")
+    else:
+        log(f"URL pública de SonarQube: {PUBLIC_URL}")
+
+
 def ensure_webhook(auth):
     status, body = call("GET", "/api/webhooks/list", auth=auth)
     if any(w.get("url") == WEBHOOK_URL for w in body.get("webhooks", [])):
@@ -183,4 +194,5 @@ if __name__ == "__main__":
     ensure_gate(auth)
     ensure_projects(auth)
     ensure_webhook(auth)
+    ensure_public_url(auth)
     log("SonarQube configurado")
