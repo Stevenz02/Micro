@@ -42,7 +42,9 @@ unclassified:
     installations:
       # Contrato de Kevin: withSonarQubeEnv('sonarqube-reto7')
       - name: "sonarqube-reto7"
-        serverUrl: "http://sonarqube:9000"
+        # host.docker.internal funciona dentro del contenedor Jenkins Y en el navegador de Windows
+        # (Docker Desktop lo agrega al archivo hosts). Así los enlaces "SonarQube" de Jenkins abren.
+        serverUrl: "${SONAR_HOST_URL_JENKINS}"
         credentialsId: "sonarqube-token"
 
 jobs:
