@@ -1,0 +1,14 @@
+fastapi==0.115.6
+uvicorn==0.34.0
+httpx==0.28.1
+psycopg[binary]==3.2.6
+pybreaker==1.2.0
+pika==1.3.2
+# Reto 8 - observabilidad
+opentelemetry-api==1.29.0
+opentelemetry-sdk==1.29.0
+opentelemetry-exporter-zipkin-json==1.29.0
+opentelemetry-instrumentation-fastapi==0.50b0
+prometheus-fastapi-instrumentator==7.0.0
+prometheus-client==0.26.0
+opentelemetry-instrumentation-httpx==0.50b0
