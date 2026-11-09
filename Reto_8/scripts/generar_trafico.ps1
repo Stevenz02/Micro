@@ -16,7 +16,8 @@ function Invoke-Api($Method, $Path, $Body = $null) {
     try { return Invoke-RestMethod @params }
     catch {
         $code = if ($_.Exception.Response) { [int]$_.Exception.Response.StatusCode } else { "sin respuesta" }
-        Write-Host "  $Method $Path -> $code" -ForegroundColor Yellow
+        $detalle = if ($_.ErrorDetails -and $_.ErrorDetails.Message) { " $($_.ErrorDetails.Message)" } else { "" }
+        if (-not $script:Silencio404 -or $code -ne 404) { Write-Host "  $Method $Path -> $code$detalle" -ForegroundColor Yellow }
         return $null
     }
 }
@@ -41,7 +42,8 @@ if (-not $SinOnboarding) {
     if ($empleado) { Write-Host "   Empleado creado: $($empleado.id) estado=$($empleado.estado)" -ForegroundColor Green }
 
     Write-Host "4) Vacaciones que inician HOY para $id (el scheduler crea la traza raiz)" -ForegroundColor Cyan
-    $hoy = Get-Date -Format "yyyy-MM-dd"
+    # vacaciones-service valida fechas en UTC: en Colombia despues de las 7 p. m. "hoy" en UTC ya es manana
+    $hoy = (Get-Date).ToUniversalTime().ToString("yyyy-MM-dd")
     $vacacion = $null
     for ($i = 0; $i -lt 15 -and -not $vacacion; $i++) {
         Start-Sleep -Seconds 2   # espera a que vacaciones-service reciba la replica del empleado
@@ -50,7 +52,8 @@ if (-not $SinOnboarding) {
     if ($vacacion) { Write-Host "   Vacacion $($vacacion.id) PROGRAMADA; en ~5 s el scheduler la inicia" -ForegroundColor Green }
 }
 
-Write-Host "5) $Consultas consultas de lectura por varios servicios" -ForegroundColor Cyan
+Write-Host "5) $Consultas consultas de lectura por varios servicios (incluye 404 intencionales)" -ForegroundColor Cyan
+$script:Silencio404 = $true
 for ($i = 1; $i -le $Consultas; $i++) {
     Invoke-Api Get "/empleados" | Out-Null
     Invoke-Api Get "/departamentos" | Out-Null

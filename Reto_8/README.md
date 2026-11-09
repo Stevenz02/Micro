@@ -268,7 +268,7 @@ sum by (service) (count_over_time({service=~".+"} |= "evento_procesado" [5m]))
 {service="departamentos-service"} | json | durationMs > 1000
 ```
 
-> 📸 Evidencia: `docs/img/loki-logql.png` (resultado de la consulta 2).
+> 📸 Evidencia: `docs/img/loki-logql.png` (resultado de la consulta 2, ver §7).
 
 ## 5. Dashboard en Grafana
 
@@ -319,33 +319,41 @@ Los comandos exactos están en `comandos_sustentacion_reto8.txt`. Resumen del fl
 
 ### Evidencias
 
-| Evidencia | Archivo |
-|---|---|
-| Targets de Prometheus (7 UP) | `docs/img/prometheus-targets.png` |
-| Dashboard con métricas reales | `docs/img/grafana-dashboard.png` |
-| Dashboard con departamentos-service caído | `docs/img/grafana-servicio-caido.png` |
-| Cascada del onboarding en Zipkin | `docs/img/zipkin-onboarding.png` |
-| Cascada del scheduler (vacaciones → auth → notificaciones) | `docs/img/zipkin-scheduler.png` |
-| Alerta recibida en Discord | `docs/img/discord-alerta.png` |
-| Consulta LogQL | `docs/img/loki-logql.png` |
-| Panel de latencia durante el caos 2 | `docs/img/grafana-latencia.png` |
+**Prometheus: los 7 targets en `UP`**, con el Gateway primero y `/actuator/prometheus` para Spring Boot.
+![Targets de Prometheus](docs/img/prometheus-targets.png)
 
+**Dashboard con métricas reales**, con las filas *Resumen del Sistema* y *Comportamiento del Tráfico*.
 ![Dashboard](docs/img/grafana-dashboard.png)
+
+**Traza del onboarding en Zipkin:** 7 servicios y 26 spans en una sola cascada. Recorre `api-gateway` → `empleados-service` → `departamentos-service` (incluida su consulta a PostgreSQL). Luego `empleados` publica `empleado.creado` y la traza continúa en `auth-service`, `perfiles-service` (Go), `vacaciones-service` (.NET) y `notificaciones-service` (Java). `auth-service` publica a su vez `usuario.creado` hacia `notificaciones-service`.
 ![Traza onboarding](docs/img/zipkin-onboarding.png)
-![Alerta Discord](docs/img/discord-alerta.png)
+
+**Traza del scheduler (el caso difícil):** sin petición HTTP de origen, el inicio de vacaciones forma **una sola cascada**: `scheduler.vacaciones.iniciar` → `publish vacaciones.iniciadas` → `auth-service` → `publish cuenta.desactivada` → `notificaciones-service`. Son 3 servicios y 6 spans.
+![Traza scheduler](docs/img/zipkin-scheduler.png)
+
+**LogQL:** `{service=~".+"} | json | traceId="6853a42c67e58e317305d1c478bfc130"` devuelve los logs JSON de `api-gateway`, `auth-service` y `notificaciones-service` que pertenecen a la traza del onboarding de arriba. Así se correlacionan logs y trazas.
+![LogQL](docs/img/loki-logql.png)
+
+**Caos 1: `docker compose stop departamentos-service`.** El panel pasa a `DOWN` (rojo) y *Servicios caídos* marca 1. Llega a Discord la alerta **Servicio Caído**, y al hacer `start` llega **✅ RESUELTA**.
+![Servicio caído](docs/img/grafana-servicio-caido.png)
+![Alerta Discord servicio caído](docs/img/discord-servicio-caido.jpg)
+
+**Caos 2: latencia inducida en empleados-service** (`CHAOS_EMPLEADOS_LATENCY_SECONDS=5`, probabilidad 0.5). La latencia promedio de empleados sube a 2.24–2.52 s y cruza el umbral de 2 s (zona roja). El Gateway, que lo llama, sube a 706 ms. Unos 2 minutos después llega a Discord **Alta Latencia**.
+![Latencia inducida](docs/img/grafana-latencia.png)
+![Alerta Discord alta latencia](docs/img/discord-alta-latencia.jpg)
 
 ### ¿Qué servicio del ecosistema tardó más en responder y cómo lo identificaron?
 
-> _Completar con los valores reales medidos en la sustentación (ver §7 de `comandos_sustentacion_reto8.txt`)._
+**En operación normal, `auth-service`: latencia promedio de unos 422 ms**, frente a 26 ms de empleados, 6 ms de notificaciones, 3 ms de departamentos y menos de 2 ms de perfiles y vacaciones.
 
-**Método** (de lo general a lo particular):
+**Cómo lo identificamos:**
 
-1. **Métricas:** en el panel *Latencia promedio por servicio* y *Latencia p95* se compara cada `job`. La consulta que ordena los servicios es:
+1. **Métricas (Prometheus/Grafana).** El panel *Latencia promedio por servicio* calcula `rate(http_request_duration_seconds_sum[1m]) / rate(http_request_duration_seconds_count[1m])` por `job`. En la tabla de la leyenda, `auth-service` aparecía siempre arriba con 415–422 ms. Para ordenarlos en Prometheus:
    ```promql
    topk(7, sum by (job) (rate(http_request_duration_seconds_sum[5m])) / sum by (job) (rate(http_request_duration_seconds_count[5m]))
         or sum by (job) (rate(http_server_requests_seconds_sum[5m])) / sum by (job) (rate(http_server_requests_seconds_count[5m])))
    ```
-2. **Trazas:** en Zipkin, la traza del `POST /empleados` muestra la duración de cada span. El span más ancho, descontando el de sus hijos, es el responsable.
-3. **Logs:** con el `traceId` de esa traza, Loki muestra qué hizo cada servicio en ese momento, p. ej. `durationMs` en departamentos o el procesamiento del evento en notificaciones.
-
-**Resultado:** _servicio X (p95 ≈ N ms)._ El **api-gateway** siempre muestra la mayor latencia acumulada porque espera a sus upstreams. Por eso se analiza el tiempo **propio** de cada span en Zipkin y no solo el total.
+   Con la etiqueta `handler` de `http_requests_total{job="auth-service"}` se ve que ese tráfico corresponde a `POST /auth/login`.
+2. **Causa.** El login verifica la contraseña con **bcrypt (costo 12)**, un algoritmo lento *a propósito* para resistir fuerza bruta. Es un costo de CPU esperado y no una falla: por eso ninguna alerta se dispara, ya que está muy por debajo de 2 s.
+3. **Trazas (Zipkin).** En la cascada del onboarding (147 ms en total), el tramo asíncrono más largo también es de `auth-service`: `auth.events process empleado.creado` tarda unos 68 ms porque crea la cuenta y emite el token de activación. En la parte síncrona, `departamentos-service` tardó 22.8 ms, y de eso 16 ms fueron `pg-pool.connect` (abrir la conexión a PostgreSQL), no la consulta (4 ms). La traza permite separar el tiempo propio de cada servicio del tiempo que espera a otros. Por eso no culpamos al `api-gateway`, que siempre acumula la latencia de sus upstreams.
+4. **Bajo caos,** el más lento pasó a ser `empleados-service`: 1.23 s de promedio y 2.52 s de máximo, con la alerta *Alta Latencia* en Discord. En Zipkin, las trazas lentas de `GET /empleados` muestran el span de `empleados-service` alargado unos 5 s sin spans hijos que lo expliquen, así que el retardo es propio del servicio y no de departamentos ni de la BD. Los logs de Loki lo confirman con `{service="empleados-service"} |= "Latencia artificial"`.
