@@ -42,7 +42,9 @@ unclassified:
     installations:
       # Contrato de Kevin: withSonarQubeEnv('sonarqube-reto7')
       - name: "sonarqube-reto7"
-        serverUrl: "http://sonarqube:9000"
+        # host.docker.internal funciona dentro del contenedor Jenkins Y en el navegador de Windows
+        # (Docker Desktop lo agrega al archivo hosts). Así los enlaces "SonarQube" de Jenkins abren.
+        serverUrl: "${SONAR_HOST_URL_JENKINS}"
         credentialsId: "sonarqube-token"
 
 jobs:
@@ -62,10 +64,19 @@ jobs:
         ['reto7-package',         'Reto_7/infra/jenkins/pipelines/Jenkinsfile.package',         'Package: docker build (tag BUILD-commit y latest) y push al registry local.'],
         ['reto7-despliegue-e2e',  'Reto_7/infra/jenkins/pipelines/Jenkinsfile.despliegue-e2e',  'Deploy -> E2E BDD -> logs -> down -v. Usar como E2E_JOB de los pipelines de servicio.'],
       ]
+      // Disparo automático (punto 5.4 opcional): Jenkins revisa el repo cada minuto (pollSCM) y,
+      // si hay un commit nuevo, construye. Solo en los dos pipelines de la demo para no lanzar 7 jobs.
+      def autoTrigger = [
+        'reto7-empleados'    : 'Reto_4/empleados/.*\nReto_4/tests/.*\nReto_1/app/.*',
+        'reto7-departamentos': 'Reto_4/departamentos/.*',
+      ]
       pipelines.each { p ->
         pipelineJob(p[0]) {
           description(p[2])
           logRotator { numToKeep(20) }
+          if (autoTrigger[p[0]]) {
+            properties { pipelineTriggers { triggers { pollSCM { scmpoll_spec('* * * * *') } } } }
+          }
           definition {
             cpsScm {
               scm {

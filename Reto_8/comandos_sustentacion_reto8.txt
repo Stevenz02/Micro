@@ -1,0 +1,101 @@
+============================================================
+ RETO 8 - OBSERVABILIDAD - COMANDOS DE SUSTENTACION (PowerShell)
+ Todo se ejecuta desde: C:\Users\Steven\Documents\Micro\Reto_8
+ No toca Reto_4/5/6/7: proyecto Compose "reto8", Prometheus en 9091 (Jenkins usa 9090)
+============================================================
+
+0) PREPARACION (una sola vez)
+------------------------------------------------------------
+cd C:\Users\Steven\Documents\Micro\Reto_8
+Copy-Item .env.example .env
+notepad .env        # pegar DISCORD_WEBHOOK_URL=https://discord.com/api/webhooks/...
+
+# Docker Desktop -> Settings -> Resources -> Memory: 8 GB
+
+
+1) LEVANTAR TODO EL ECOSISTEMA + OBSERVABILIDAD
+------------------------------------------------------------
+docker compose up --build -d --wait --wait-timeout 600
+docker compose ps
+
+# UIs:
+#   Gateway     http://localhost:8080/docs
+#   Grafana     http://localhost:3000      (admin / admin)
+#   Prometheus  http://localhost:9091/targets   (los 7 jobs deben estar UP)
+#   Zipkin      http://localhost:9411
+
+
+2) VERIFICAR /health Y /metrics (desde dentro de la red Docker)
+------------------------------------------------------------
+docker compose exec api-gateway python -c "import urllib.request as u; print(u.urlopen('http://empleados-service:8081/health').read().decode())"
+docker compose exec api-gateway python -c "import urllib.request as u; print(u.urlopen('http://departamentos-service:8082/health').read().decode())"
+docker compose exec api-gateway python -c "import urllib.request as u; print(u.urlopen('http://perfiles-service:8083/health').read().decode())"
+docker compose exec api-gateway python -c "import urllib.request as u; print(u.urlopen('http://notificaciones-service:8084/health').read().decode())"
+docker compose exec api-gateway python -c "import urllib.request as u; print(u.urlopen('http://vacaciones-service:8085/health').read().decode())"
+docker compose exec api-gateway python -c "import urllib.request as u; print(u.urlopen('http://auth-service:8086/health').read().decode())"
+Invoke-RestMethod http://localhost:8080/health | ConvertTo-Json -Depth 5
+
+# Metricas en formato Prometheus
+(Invoke-WebRequest http://localhost:8080/metrics -UseBasicParsing).Content -split "`n" | Select-String "^http_requests_total" | Select-Object -First 5
+
+
+3) GENERAR TRAFICO (onboarding + vacaciones + consultas)
+------------------------------------------------------------
+.\scripts\generar_trafico.ps1
+# Si PowerShell bloquea el script:
+#   Set-ExecutionPolicy -Scope Process Bypass
+#   .\scripts\generar_trafico.ps1
+
+# Trazas en Zipkin (http://localhost:9411):
+#   - serviceName=api-gateway, spanName "post /empleados"  -> cascada del onboarding
+#   - serviceName=vacaciones-service, spanName "scheduler.vacaciones.iniciar"
+#     -> UNA cascada: vacaciones -> auth-service -> notificaciones-service
+
+
+4) LOGS EN LOKI (Grafana -> Explore -> Loki)
+------------------------------------------------------------
+{service=~".+"} | json | level="ERROR"
+{service=~".+"} | json | traceId="PEGAR_TRACE_ID_DE_ZIPKIN"
+sum by (service) (count_over_time({service=~".+"} |= "evento_procesado" [5m]))
+
+# Logs JSON por consola:
+docker compose logs --tail 5 empleados-service
+
+
+5) CAOS 1 - APAGAR UN SERVICIO
+------------------------------------------------------------
+docker compose stop departamentos-service
+# Esperar ~2 minutos y verificar:
+#   Prometheus /targets -> departamentos-service DOWN
+#   Grafana -> panel "Estado de cada servicio" en ROJO
+#   Discord -> alerta "Servicio Caido"
+# El onboarding sigue funcionando: el empleado queda PENDIENTE (circuit breaker del Reto 3)
+.\scripts\generar_trafico.ps1 -Consultas 5
+
+docker compose start departamentos-service      # llega la notificacion RESUELTA a Discord
+
+
+6) CAOS 2 - LATENCIA INDUCIDA (sin editar codigo)
+------------------------------------------------------------
+$env:CHAOS_EMPLEADOS_LATENCY_SECONDS="5"
+docker compose up -d empleados-service           # recrea el contenedor con la variable nueva
+.\scripts\generar_trafico.ps1 -SinOnboarding -Consultas 60
+#   Grafana -> "Latencia promedio por servicio" supera la linea roja de 2 s
+#   ~2 minutos despues -> Discord: "Alta Latencia" (empleados-service y api-gateway)
+
+# Volver a la normalidad:
+Remove-Item Env:CHAOS_EMPLEADOS_LATENCY_SECONDS
+docker compose up -d empleados-service
+
+
+7) PREGUNTA: QUE SERVICIO TARDO MAS EN RESPONDER?
+------------------------------------------------------------
+# Prometheus (http://localhost:9091/graph) o Grafana Explore:
+topk(7, sum by (job) (rate(http_request_duration_seconds_sum[5m])) / sum by (job) (rate(http_request_duration_seconds_count[5m])) or sum by (job) (rate(http_server_requests_seconds_sum[5m])) / sum by (job) (rate(http_server_requests_seconds_count[5m])))
+# Confirmar en Zipkin: abrir la traza mas lenta (ordenar por "Longest") y ver que span es el mas ancho.
+
+
+8) APAGAR
+------------------------------------------------------------
+docker compose down          # conserva volumenes (dashboards, datos)
+docker compose down -v       # borra todo (empezar de cero)

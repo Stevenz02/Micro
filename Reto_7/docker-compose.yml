@@ -55,6 +55,7 @@ services:
       SONAR_ADMIN_PASSWORD: ${SONAR_ADMIN_PASSWORD:?Configure SONAR_ADMIN_PASSWORD en .env}
       SONAR_MIN_COVERAGE: ${SONAR_MIN_COVERAGE:-70}
       JENKINS_WEBHOOK_URL: http://jenkins:8080/sonarqube-webhook/
+      SONAR_PUBLIC_URL: http://localhost:9000   # URL de los enlaces SonarQube que muestra Jenkins
       TOKEN_FILE: /run/reto7/sonar-token
     volumes:
       - ./infra/sonarqube/init_sonar.py:/init_sonar.py:ro
@@ -77,6 +78,7 @@ services:
       context: ./infra/jenkins
       dockerfile: Dockerfile
     container_name: jenkins          # el job de despliegue lo conecta por nombre a la red del sistema
+    extra_hosts: ["host.docker.internal:host-gateway"]   # también en Linux nativo
     restart: unless-stopped
     depends_on:
       sonar-init: { condition: service_completed_successfully }   # el token ya existe al arrancar
@@ -96,6 +98,7 @@ services:
       REPO_URL: ${REPO_URL:-file:///repo}
       REPO_BRANCH: ${REPO_BRANCH:-*/main}
       JENKINS_CONTAINER_NAME: jenkins
+      SONAR_HOST_URL_JENKINS: ${SONAR_HOST_URL_JENKINS:-http://host.docker.internal:9000}   # análisis + enlaces
       REGISTRY_PUSH_HOST: localhost:5000        # el Docker del host publica en su localhost:5000
       REGISTRY_API_URL: http://registry:5000    # Jenkins consulta el registry por la red interna
     volumes:
