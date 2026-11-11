@@ -14,6 +14,24 @@ y agrega nuevos conceptos sin reemplazar los retos anteriores.
 | [Reto 4](Reto_4/HANDOFF_RETO4.md) | Eventos RabbitMQ, perfiles, notificaciones y vacaciones | Logica y despliegue verificados segun el handoff tecnico del reto |
 | [Reto 5](Reto_5/README.md) | JWT, RBAC, ciclo de vida de cuentas por eventos y scheduler | Completado y verificado con Docker Compose: 18 pasos del flujo integrado, incluido el caso borde de retiro durante vacaciones |
 | [Reto 6](Reto_6/README.md) | Automatizacion de pruebas: unitarias, integracion y BDD | Completado: 64 unitarias de Empleados (79 % de cobertura), Auth, Gateway y Vacaciones; integracion con Testcontainers; 25 escenarios BDD en verde 3 veces seguidas, tambien en contenedor `bdd-tests` |
+| [Reto 7](Reto_7/README.md) | Integracion continua con Jenkins y SonarQube | Logica CI, ocho pipelines y contratos de infraestructura documentados; revisar evidencia y pendientes en `LEER_PRIMERO_IA_COMPANERO.md` |
+| [Reto 8](Reto_8/README.md) | Observabilidad: metricas, logs, trazas y alertas | Ecosistema autocontenido e instrumentado con Prometheus, Grafana, Loki y Zipkin |
+
+## Documentación y grafo del repositorio
+
+- [Índice de documentos](Docs/README.md): enunciados de los ocho retos y referencias transversales.
+- [Mapa de arquitectura](Docs/ARQUITECTURA_REPOSITORIO.md): evolución, dependencias, servicios, flujos y guía para el proyecto final.
+- [Grafo interactivo](graphify-out/graph.html): navegación visual de código y documentación.
+- [Reporte de Graphify](graphify-out/GRAPH_REPORT.md): comunidades, nodos centrales y conexiones relevantes.
+
+Graphify está instalado como herramienta local del usuario. La integración de Codex en
+`.codex/` es local y está ignorada por Git; cada colaborador puede regenerarla con
+`graphify codex install --project`. Para consultas rápidas desde la raíz:
+
+```powershell
+graphify query "¿dónde se implementa el flujo de onboarding?"
+graphify path "api-gateway" "RabbitMQ"
+```
 
 ## Estructura general
 
@@ -22,6 +40,8 @@ Micro/
 +-- README.md
 +-- .gitignore
 +-- .dockerignore
++-- Docs/                     # Enunciados Markdown, referencias y mapa arquitectónico
++-- graphify-out/             # Grafo HTML/JSON y reporte de arquitectura
 +-- Reto_1/                   # Python/FastAPI, almacenamiento en memoria
 |   +-- app/
 |   +-- tests/
@@ -50,6 +70,8 @@ Micro/
 +-- Reto_4/                   # Eventos de RR. HH. con RabbitMQ
 +-- Reto_5/                   # auth-service, Gateway con JWT/RBAC y scheduler, con Docker Compose
 +-- Reto_6/                   # Pruebas: scripts por suite, e2e-tests (Behave) y Compose con bdd-tests
++-- Reto_7/                   # Jenkins, SonarQube, utilidades de reportes y coordinación E2E
++-- Reto_8/                   # Ecosistema autocontenido con observabilidad integral
 ```
 
 Reto 2 importa el modelo de `Reto_1/app/models.py` y lo incorpora en su imagen
@@ -120,7 +142,7 @@ configuraciones de ejecucion independientes.
 Reto 5:
 
 ```powershell
-Set-Location C:\Users\Steven\Documents\Micro\Reto_5
+Set-Location .\Reto_5
 if (!(Test-Path .env)) { Copy-Item .env.example .env }
 docker compose up --build -d --wait --wait-timeout 300
 # Login del admin semilla (credenciales academicas en .env.example)
@@ -135,7 +157,7 @@ El flujo completo de 18 pasos y su evidencia estan en
 Reto 6 (suite BDD en contenedor; las demas suites estan en [Reto_6/README.md](Reto_6/README.md)):
 
 ```powershell
-Set-Location C:\Users\Steven\Documents\Micro\Reto_6
+Set-Location .\Reto_6
 if (!(Test-Path .env)) { Copy-Item .env.example .env }
 docker compose up --build -d --wait --wait-timeout 300
 docker compose run --rm --build bdd-tests   # reportes en e2e-tests/reports

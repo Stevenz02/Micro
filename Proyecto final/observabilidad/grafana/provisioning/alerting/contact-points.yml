@@ -1,0 +1,29 @@
+# Reto 8 - Canal de notificación externo: webhook de Discord.
+# La URL real NO se versiona: viene de DISCORD_WEBHOOK_URL (.env -> docker-compose -> Grafana).
+apiVersion: 1
+
+contactPoints:
+  - orgId: 1
+    name: discord-rrhh
+    receivers:
+      - uid: discord-rrhh
+        type: discord
+        disableResolveMessage: false
+        settings:
+          url: ${DISCORD_WEBHOOK_URL}
+          use_discord_username: false
+          title: '{{ if eq .Status "firing" }}🔥 ALERTA{{ else }}✅ RESUELTA{{ end }}: {{ .CommonLabels.alertname }}'
+          message: |
+            {{ range .Alerts }}**{{ .Labels.alertname }}** · servicio: `{{ or .Labels.job "ecosistema" }}` · severidad: {{ .Labels.severity }}
+            {{ .Annotations.summary }}
+            {{ .Annotations.description }}
+            {{ end }}
+
+# Todas las alertas del ecosistema se enrutan a Discord
+policies:
+  - orgId: 1
+    receiver: discord-rrhh
+    group_by: ['alertname', 'job']
+    group_wait: 10s
+    group_interval: 1m
+    repeat_interval: 1h

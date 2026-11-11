@@ -1,0 +1,16 @@
+.env
+.env.*
+!.env.example
+secrets/
+.ci/
+**/__pycache__/
+**/.pytest_cache/
+**/node_modules/
+**/target/
+**/bin/
+**/obj/
+**/reports/
+**/coverage/
+*.pyc
+*.log
+.coverage

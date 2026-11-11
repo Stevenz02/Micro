@@ -5,7 +5,7 @@ pipeline {
     booleanParam(name: 'RUN_PACKAGE', defaultValue: false, description: 'Invoca el job de empaquetado mantenido por infraestructura')
     string(name: 'PACKAGE_JOB', defaultValue: '', description: 'Nombre completo del job externo de Package')
     booleanParam(name: 'TRIGGER_E2E', defaultValue: false, description: 'Dispara una única ejecución coordinada del pipeline E2E')
-    string(name: 'E2E_JOB', defaultValue: 'reto7-integracion-e2e', description: 'Job coordinador de BDD')
+    string(name: 'E2E_JOB', defaultValue: 'reto7-despliegue-e2e', description: 'Job coordinador que despliega y ejecuta BDD')
   }
   environment { SONARQUBE_ENV = 'sonarqube-reto7' }
   stages {
@@ -52,6 +52,8 @@ pipeline {
               /n:"Reto 7 - Vacaciones" \
               /d:sonar.host.url="$SONAR_HOST_URL" \
               /d:sonar.token="$SONAR_AUTH_TOKEN" \
+              /d:sonar.inclusions="Reto_5/vacaciones/**" \
+              /d:sonar.coverage.exclusions="Reto_5/vacaciones/Program.cs,Reto_5/vacaciones/EmployeeEventsConsumer.cs,Reto_5/vacaciones/RabbitPublisher.cs" \
               /d:sonar.cs.opencover.reportsPaths="Reto_5/vacaciones.tests/reports/coverage.opencover.xml" \
               /d:sonar.cs.vstest.reportsPaths="Reto_5/vacaciones.tests/reports/vacaciones.trx"
             dotnet build Reto_5/vacaciones.tests/Vacaciones.Tests.csproj --configuration Release --no-restore
