@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Reto 8: logs JSON (logstash-logback-encoder) con timestamp, level, service, traceId y message.
+     traceId/spanId llegan al MDC desde Micrometer Tracing (puente OpenTelemetry). -->
+<configuration>
+  <springProperty scope="context" name="SERVICE_NAME" source="spring.application.name" defaultValue="notificaciones-service"/>
+  <appender name="JSON" class="ch.qos.logback.core.ConsoleAppender">
+    <encoder class="net.logstash.logback.encoder.LogstashEncoder">
+      <fieldNames>
+        <timestamp>timestamp</timestamp>
+        <version>[ignore]</version>
+        <levelValue>[ignore]</levelValue>
+        <logger>logger</logger>
+        <thread>thread</thread>
+      </fieldNames>
+      <customFields>{"service":"${SERVICE_NAME}"}</customFields>
+      <includeMdcKeyName>traceId</includeMdcKeyName>
+      <includeMdcKeyName>spanId</includeMdcKeyName>
+    </encoder>
+  </appender>
+  <root level="INFO">
+    <appender-ref ref="JSON"/>
+  </root>
+</configuration>

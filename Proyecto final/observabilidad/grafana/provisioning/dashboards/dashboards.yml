@@ -1,0 +1,13 @@
+# Reto 8 - Carga los dashboards JSON versionados en Git al arrancar Grafana
+apiVersion: 1
+
+providers:
+  - name: reto8
+    orgId: 1
+    folder: Reto 8 - Observabilidad
+    type: file
+    disableDeletion: true
+    allowUiUpdates: false
+    options:
+      path: /etc/grafana/provisioning/dashboards/json
+      foldersFromFilesStructure: false

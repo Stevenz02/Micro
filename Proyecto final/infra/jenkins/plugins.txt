@@ -1,0 +1,20 @@
+# Plugins pre-instalados con jenkins-plugin-cli (Punto 1). Sin pasos manuales en la UI.
+# --- Pipeline y aprovisionamiento como código ---
+workflow-aggregator
+pipeline-stage-view
+pipeline-graph-view
+configuration-as-code
+job-dsl
+git
+credentials-binding
+timestamper
+# --- Docker (docker-pipeline/docker-workflow es el mismo plugin; su id es docker-workflow) ---
+docker-workflow
+# --- Calidad ---
+sonar
+# --- Publicación de reportes del Reto 6 ---
+junit
+coverage
+cucumber-reports
+htmlpublisher
+mstest

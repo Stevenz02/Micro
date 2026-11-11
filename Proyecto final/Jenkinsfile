@@ -1,0 +1,88 @@
+pipeline {
+  agent any
+  options { timestamps(); disableConcurrentBuilds() }
+  parameters {
+    booleanParam(name: 'RUN_E2E', defaultValue: true, description: 'Levantar el ecosistema y ejecutar Behave al final')
+  }
+  environment {
+    PROJECT_DIR = 'Proyecto final'
+    CI_VENV = '.ci/venv'
+    SONARQUBE_ENV = 'sonarqube-proyecto-final'
+  }
+  stages {
+    stage('Preparar configuración efímera') {
+      steps {
+        dir(env.PROJECT_DIR) {
+          sh 'chmod +x scripts/setup.sh && scripts/setup.sh --force'
+          sh 'docker compose config --quiet'
+        }
+      }
+    }
+    stage('Pruebas unitarias') {
+      parallel {
+        stage('Python') {
+          steps {
+            dir(env.PROJECT_DIR) {
+              sh '''
+                python3 -m venv "$CI_VENV"
+                "$CI_VENV/bin/python" -m pip install --disable-pip-version-check -q -r microservicios/requirements-test.txt
+                mkdir -p microservicios/reports
+                PYTHONPATH=microservicios "$CI_VENV/bin/python" -m pytest microservicios/tests -m 'not integration' \
+                  --cov=microservicios/empleados/app --cov=microservicios/auth/auth_app \
+                  --cov=microservicios/api-gateway/gateway_app \
+                  --cov-report=xml:microservicios/reports/python-coverage.xml \
+                  --junitxml=microservicios/reports/python-junit.xml
+              '''
+            }
+          }
+        }
+        stage('Node.js') {
+          steps { dir("${env.PROJECT_DIR}/microservicios/departamentos") { sh 'npm ci && npm test' } }
+        }
+        stage('Go') {
+          steps { dir("${env.PROJECT_DIR}/microservicios/perfiles") { sh 'go test -coverprofile=coverage.out ./...' } }
+        }
+        stage('Java') {
+          steps { dir("${env.PROJECT_DIR}/microservicios/notificaciones") { sh 'mvn -B -ntp verify' } }
+        }
+        stage('.NET') {
+          steps { dir(env.PROJECT_DIR) { sh 'dotnet test microservicios/vacaciones.tests/Vacaciones.Tests.csproj --configuration Release --collect:"XPlat Code Coverage"' } }
+        }
+      }
+    }
+    stage('SonarQube Quality Gate') {
+      steps {
+        dir(env.PROJECT_DIR) {
+          withSonarQubeEnv(env.SONARQUBE_ENV) { sh 'sonar-scanner -Dproject.settings=sonar-project.properties' }
+          timeout(time: 15, unit: 'MINUTES') { waitForQualityGate abortPipeline: true }
+        }
+      }
+    }
+    stage('Package') {
+      steps { dir(env.PROJECT_DIR) { sh 'docker compose build' } }
+    }
+    stage('BDD end-to-end') {
+      when { expression { params.RUN_E2E } }
+      steps {
+        dir(env.PROJECT_DIR) {
+          sh 'docker compose up -d --build --wait --wait-timeout 600 api-gateway'
+          sh '''
+            ADMIN_PASSWORD=$(cat secrets/admin-password.txt) \
+            ADMIN_EMAIL=admin@proyecto.local \
+            BASE_URL=http://host.docker.internal:8080 \
+            "$CI_VENV/bin/python" e2e-tests/run.py
+          '''
+        }
+      }
+    }
+  }
+  post {
+    always {
+      dir(env.PROJECT_DIR) {
+        junit testResults: 'microservicios/reports/*-junit.xml,e2e-tests/reports/junit.xml', allowEmptyResults: true
+        archiveArtifacts artifacts: 'microservicios/reports/**,e2e-tests/reports/**', allowEmptyArchive: true
+        sh 'docker compose down -v --remove-orphans || true'
+      }
+    }
+  }
+}

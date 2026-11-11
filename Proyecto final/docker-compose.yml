@@ -1,0 +1,446 @@
+# Proyecto final - ecosistema RR. HH. completo
+# Negocio + mensajería + observabilidad + CI/CD en una definición reproducible.
+# Antes del primer arranque ejecute scripts/setup.ps1 (Windows) o scripts/setup.sh (Linux/macOS).
+name: proyecto-final
+
+# Variables comunes de OpenTelemetry (W3C Trace Context + exportador Zipkin por nombre de red Docker)
+x-otel: &otel
+  OTEL_EXPORTER_ZIPKIN_ENDPOINT: http://zipkin:9411/api/v2/spans
+  OTEL_PROPAGATORS: tracecontext,baggage
+  OTEL_TRACES_EXPORTER: zipkin
+
+x-db-health: &db-health
+  test: [CMD-SHELL, "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+  interval: 5s
+  timeout: 5s
+  retries: 15
+  start_period: 10s
+
+services:
+  # =====================================================================================
+  #  Infraestructura del ecosistema (igual que Reto 5/6)
+  # =====================================================================================
+  rabbitmq:
+    image: rabbitmq:4.1-management-alpine
+    restart: unless-stopped
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:?Configure RABBITMQ_USER en .env}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:?Configure RABBITMQ_PASSWORD en .env}
+    volumes:
+      - rabbitmq-data:/var/lib/rabbitmq
+    ports: ["127.0.0.1:${RABBITMQ_MANAGEMENT_PORT:-15672}:15672"]
+    expose: ["5672"]
+    networks: [microservices-network]
+    # Primer arranque lento en Docker Desktop: margen amplio antes de declararlo unhealthy
+    healthcheck: { test: [CMD, rabbitmq-diagnostics, -q, ping], interval: 5s, timeout: 10s, retries: 30, start_period: 60s }
+
+  # Transitorio: declara exchange, colas y bindings y termina
+  rabbitmq-setup:
+    image: python:3.12-alpine
+    restart: "no"
+    environment:
+      RABBITMQ_USER: ${RABBITMQ_USER}
+      RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD}
+    volumes: ["./microservicios/rabbitmq/setup.py:/setup.py:ro"]
+    command: [python, /setup.py]
+    depends_on: { rabbitmq: { condition: service_healthy } }
+    networks: [microservices-network]
+
+  database-empleados:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment: { POSTGRES_DB: "${DB_EMPLEADOS_NAME}", POSTGRES_USER: "${DB_EMPLEADOS_USER}", POSTGRES_PASSWORD: "${DB_EMPLEADOS_PASSWORD}" }
+    volumes: ["vol-empleados:/var/lib/postgresql/data", "./microservicios/empleados/init.sql:/docker-entrypoint-initdb.d/01-init.sql:ro"]
+    networks: [empleados-db]
+    healthcheck: *db-health
+
+  database-departamentos:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment: { POSTGRES_DB: "${DB_DEPARTAMENTOS_NAME}", POSTGRES_USER: "${DB_DEPARTAMENTOS_USER}", POSTGRES_PASSWORD: "${DB_DEPARTAMENTOS_PASSWORD}" }
+    volumes: ["vol-departamentos:/var/lib/postgresql/data", "./microservicios/departamentos/init.sql:/docker-entrypoint-initdb.d/01-init.sql:ro"]
+    networks: [departamentos-db]
+    healthcheck: *db-health
+
+  database-perfiles:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment: { POSTGRES_DB: "${DB_PERFILES_NAME}", POSTGRES_USER: "${DB_PERFILES_USER}", POSTGRES_PASSWORD: "${DB_PERFILES_PASSWORD}" }
+    volumes: ["vol-perfiles:/var/lib/postgresql/data", "./microservicios/perfiles/init.sql:/docker-entrypoint-initdb.d/01-init.sql:ro"]
+    networks: [perfiles-db]
+    healthcheck: *db-health
+
+  database-notificaciones:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment: { POSTGRES_DB: "${DB_NOTIFICACIONES_NAME}", POSTGRES_USER: "${DB_NOTIFICACIONES_USER}", POSTGRES_PASSWORD: "${DB_NOTIFICACIONES_PASSWORD}" }
+    volumes: ["vol-notificaciones:/var/lib/postgresql/data", "./microservicios/notificaciones/init.sql:/docker-entrypoint-initdb.d/01-init.sql:ro"]
+    networks: [notificaciones-db]
+    healthcheck: *db-health
+
+  database-vacaciones:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment: { POSTGRES_DB: "${DB_VACACIONES_NAME}", POSTGRES_USER: "${DB_VACACIONES_USER}", POSTGRES_PASSWORD: "${DB_VACACIONES_PASSWORD}" }
+    volumes: ["vol-vacaciones:/var/lib/postgresql/data", "./microservicios/vacaciones/init.sql:/docker-entrypoint-initdb.d/01-init.sql:ro"]
+    networks: [vacaciones-db]
+    healthcheck: *db-health
+
+  database-auth:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment: { POSTGRES_DB: "${DB_AUTH_NAME}", POSTGRES_USER: "${DB_AUTH_USER}", POSTGRES_PASSWORD: "${DB_AUTH_PASSWORD}" }
+    volumes: ["vol-auth:/var/lib/postgresql/data"]
+    networks: [auth-db]
+    healthcheck: *db-health
+
+  # =====================================================================================
+  #  Microservicios instrumentados (métricas, /health, OpenTelemetry, logs JSON)
+  # =====================================================================================
+  departamentos-service:              # Node.js / Express  -> /metrics (prom-client)
+    build: ./microservicios/departamentos
+    restart: unless-stopped
+    environment:
+      <<: *otel
+      OTEL_SERVICE_NAME: departamentos-service
+      PORT: 8082
+      DB_HOST: database-departamentos
+      DB_PORT: 5432
+      DB_NAME: ${DB_DEPARTAMENTOS_NAME}
+      DB_USER: ${DB_DEPARTAMENTOS_USER}
+      DB_PASSWORD: ${DB_DEPARTAMENTOS_PASSWORD}
+      CHAOS_LATENCY_SECONDS: ${CHAOS_DEPARTAMENTOS_LATENCY_SECONDS:-0}
+      CHAOS_LATENCY_PROBABILITY: ${CHAOS_LATENCY_PROBABILITY:-0.5}
+    depends_on: { database-departamentos: { condition: service_healthy } }
+    expose: ["8082"]
+    networks: [microservices-network, departamentos-db]
+    healthcheck: { test: [CMD, node, -e, "fetch('http://127.0.0.1:8082/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"], interval: 5s, timeout: 3s, retries: 10, start_period: 10s }
+
+  empleados-service:                  # Python / FastAPI -> /metrics (prometheus-fastapi-instrumentator)
+    build: { context: ./microservicios, dockerfile: empleados/Dockerfile }
+    restart: unless-stopped
+    environment:
+      <<: *otel
+      OTEL_SERVICE_NAME: empleados-service
+      DB_HOST: database-empleados
+      DB_PORT: 5432
+      DB_NAME: ${DB_EMPLEADOS_NAME}
+      DB_USER: ${DB_EMPLEADOS_USER}
+      DB_PASSWORD: ${DB_EMPLEADOS_PASSWORD}
+      DEPARTAMENTOS_SERVICE_URL: http://departamentos-service:8082
+      DEPARTAMENTOS_TIMEOUT_SECONDS: ${DEPARTAMENTOS_TIMEOUT_SECONDS:-2}
+      DEPARTAMENTOS_MAX_RETRIES: ${DEPARTAMENTOS_MAX_RETRIES:-3}
+      DEPARTAMENTOS_BACKOFF_SECONDS: ${DEPARTAMENTOS_BACKOFF_SECONDS:-1}
+      DEPARTAMENTOS_CB_FAIL_MAX: ${DEPARTAMENTOS_CB_FAIL_MAX:-3}
+      DEPARTAMENTOS_CB_RESET_TIMEOUT_SECONDS: ${DEPARTAMENTOS_CB_RESET_TIMEOUT_SECONDS:-30}
+      PENDIENTES_RECONCILIATION_INTERVAL_SECONDS: ${PENDIENTES_RECONCILIATION_INTERVAL_SECONDS:-15}
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_USER: ${RABBITMQ_USER}
+      RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD}
+      # Simulación de caos (punto 7): latencia artificial; 0 = desactivada
+      CHAOS_LATENCY_SECONDS: ${CHAOS_EMPLEADOS_LATENCY_SECONDS:-0}
+      CHAOS_LATENCY_PROBABILITY: ${CHAOS_LATENCY_PROBABILITY:-0.5}
+    depends_on: { database-empleados: { condition: service_healthy }, departamentos-service: { condition: service_healthy }, rabbitmq-setup: { condition: service_completed_successfully } }
+    expose: ["8081"]
+    networks: [microservices-network, empleados-db]
+    healthcheck: { test: [CMD, python, -c, "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8081/health',timeout=2)"], interval: 5s, timeout: 3s, retries: 10, start_period: 10s }
+
+  perfiles-service:                   # Go -> /metrics (prometheus/client_golang)
+    build: ./microservicios/perfiles
+    restart: unless-stopped
+    environment:
+      <<: *otel
+      OTEL_SERVICE_NAME: perfiles-service
+      DB_HOST: database-perfiles
+      DB_PORT: 5432
+      DB_NAME: ${DB_PERFILES_NAME}
+      DB_USER: ${DB_PERFILES_USER}
+      DB_PASSWORD: ${DB_PERFILES_PASSWORD}
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_USER: ${RABBITMQ_USER}
+      RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD}
+    depends_on: { database-perfiles: { condition: service_healthy }, rabbitmq-setup: { condition: service_completed_successfully } }
+    expose: ["8083"]
+    networks: [microservices-network, perfiles-db]
+    healthcheck: { test: [CMD, wget, -qO-, "http://127.0.0.1:8083/health"], interval: 5s, timeout: 3s, retries: 15, start_period: 10s }
+
+  notificaciones-service:             # Java / Spring Boot -> /actuator/prometheus (Micrometer)
+    build: ./microservicios/notificaciones
+    restart: unless-stopped
+    environment:
+      <<: *otel
+      OTEL_SERVICE_NAME: notificaciones-service
+      DB_HOST: database-notificaciones
+      DB_PORT: 5432
+      DB_NAME: ${DB_NOTIFICACIONES_NAME}
+      DB_USER: ${DB_NOTIFICACIONES_USER}
+      DB_PASSWORD: ${DB_NOTIFICACIONES_PASSWORD}
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_USER: ${RABBITMQ_USER}
+      RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD}
+      JAVA_TOOL_OPTIONS: -Xms128m -Xmx384m
+    depends_on: { database-notificaciones: { condition: service_healthy }, rabbitmq-setup: { condition: service_completed_successfully } }
+    expose: ["8084"]
+    networks: [microservices-network, notificaciones-db]
+    healthcheck: { test: [CMD, wget, -qO-, "http://127.0.0.1:8084/health"], interval: 5s, timeout: 3s, retries: 20, start_period: 40s }
+
+  vacaciones-service:                 # .NET 8 -> /metrics (prometheus-net)
+    build: ./microservicios/vacaciones
+    restart: unless-stopped
+    environment:
+      <<: *otel
+      OTEL_SERVICE_NAME: vacaciones-service
+      DB_HOST: database-vacaciones
+      DB_PORT: 5432
+      DB_NAME: ${DB_VACACIONES_NAME}
+      DB_USER: ${DB_VACACIONES_USER}
+      DB_PASSWORD: ${DB_VACACIONES_PASSWORD}
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_USER: ${RABBITMQ_USER}
+      RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD}
+      VACACIONES_SCHEDULER_INTERVAL_SECONDS: ${VACACIONES_SCHEDULER_INTERVAL_SECONDS:-5}
+    depends_on: { database-vacaciones: { condition: service_healthy }, rabbitmq-setup: { condition: service_completed_successfully } }
+    expose: ["8085"]
+    networks: [microservices-network, vacaciones-db]
+    healthcheck: { test: [CMD, curl, --fail, --silent, "http://127.0.0.1:8085/health"], interval: 5s, timeout: 3s, retries: 15, start_period: 20s }
+
+  auth-service:                       # Python / FastAPI -> /metrics
+    build: { context: ./microservicios, dockerfile: auth/Dockerfile }
+    restart: unless-stopped
+    environment:
+      <<: *otel
+      OTEL_SERVICE_NAME: auth-service
+      JWT_SECRET: ${JWT_SECRET:?Configure JWT_SECRET en .env}
+      JWT_ACCESS_TTL_SECONDS: ${JWT_ACCESS_TTL_SECONDS:-900}
+      JWT_RESET_TTL_SECONDS: ${JWT_RESET_TTL_SECONDS:-1800}
+      ADMIN_EMPLOYEE_ID: ${ADMIN_EMPLOYEE_ID:?Configure ADMIN_EMPLOYEE_ID en .env}
+      ADMIN_EMAIL: ${ADMIN_EMAIL:?Configure ADMIN_EMAIL en .env}
+      ADMIN_PASSWORD_HASH: ${ADMIN_PASSWORD_HASH:?Configure ADMIN_PASSWORD_HASH en .env}
+      DB_HOST: database-auth
+      DB_PORT: 5432
+      DB_NAME: ${DB_AUTH_NAME}
+      DB_USER: ${DB_AUTH_USER}
+      DB_PASSWORD: ${DB_AUTH_PASSWORD}
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_USER: ${RABBITMQ_USER}
+      RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD}
+    depends_on: { database-auth: { condition: service_healthy }, rabbitmq-setup: { condition: service_completed_successfully } }
+    expose: ["8086"]
+    networks: [microservices-network, auth-db]
+    healthcheck: { test: [CMD, python, -c, "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8086/health',timeout=2)"], interval: 5s, timeout: 3s, retries: 10, start_period: 10s }
+
+  api-gateway:                        # Python / FastAPI -> /metrics (primer scrape_job)
+    build: { context: ./microservicios, dockerfile: api-gateway/Dockerfile }
+    restart: unless-stopped
+    environment:
+      <<: *otel
+      OTEL_SERVICE_NAME: api-gateway
+      JWT_SECRET: ${JWT_SECRET:?Configure JWT_SECRET en .env}
+      AUTH_URL: http://auth-service:8086
+      EMPLEADOS_URL: http://empleados-service:8081
+      DEPARTAMENTOS_URL: http://departamentos-service:8082
+      PERFILES_URL: http://perfiles-service:8083
+      NOTIFICACIONES_URL: http://notificaciones-service:8084
+      VACACIONES_URL: http://vacaciones-service:8085
+      GATEWAY_REQUEST_TIMEOUT_SECONDS: ${GATEWAY_REQUEST_TIMEOUT_SECONDS:-20}
+    depends_on:
+      auth-service: { condition: service_healthy }
+      empleados-service: { condition: service_healthy }
+      departamentos-service: { condition: service_healthy }
+      perfiles-service: { condition: service_healthy }
+      notificaciones-service: { condition: service_healthy }
+      vacaciones-service: { condition: service_healthy }
+    ports: ["127.0.0.1:${GATEWAY_PORT:-8080}:8080"]
+    networks: [microservices-network]
+    # Liveness del propio proceso; el /health del Gateway agrega el estado de los upstreams
+    healthcheck: { test: [CMD, python, -c, "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/metrics',timeout=2)"], interval: 5s, timeout: 3s, retries: 10, start_period: 10s }
+
+  # =====================================================================================
+  #  Stack de observabilidad (misma red microservices-network que los servicios)
+  # =====================================================================================
+  prometheus:
+    image: prom/prometheus:v2.55.1
+    restart: unless-stopped
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=2d
+      - --web.enable-lifecycle
+    volumes:
+      - ./observabilidad/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    # 9091 en el host para no chocar con Jenkins (Reto 7 publica 9090). Dentro de Docker sigue siendo prometheus:9090
+    ports: ["127.0.0.1:${PROMETHEUS_PORT:-9091}:9090"]
+    networks: [microservices-network]
+    healthcheck: { test: [CMD, wget, -qO-, "http://127.0.0.1:9090/-/ready"], interval: 10s, timeout: 3s, retries: 10 }
+
+  loki:
+    image: grafana/loki:3.3.2
+    restart: unless-stopped
+    command: [-config.file=/etc/loki/local-config.yaml]
+    volumes:
+      - loki-data:/loki
+    expose: ["3100"]
+    networks: [microservices-network]
+    healthcheck: { test: [CMD, wget, -qO-, "http://127.0.0.1:3100/ready"], interval: 10s, timeout: 3s, retries: 15, start_period: 15s }
+
+  promtail:
+    image: grafana/promtail:3.3.2
+    restart: unless-stopped
+    command: [-config.file=/etc/promtail/promtail-config.yml]
+    volumes:
+      - ./observabilidad/promtail/promtail-config.yml:/etc/promtail/promtail-config.yml:ro
+      # Descubre los contenedores y lee sus logs a través del socket de Docker
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    depends_on: { loki: { condition: service_healthy } }
+    networks: [microservices-network]
+
+  zipkin:
+    image: openzipkin/zipkin:3.4
+    restart: unless-stopped
+    environment:
+      STORAGE_TYPE: mem
+      JAVA_OPTS: -Xms128m -Xmx384m
+    ports: ["127.0.0.1:${ZIPKIN_PORT:-9411}:9411"]
+    networks: [microservices-network]
+
+  grafana:
+    image: grafana/grafana:11.4.0
+    restart: unless-stopped
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH: /etc/grafana/provisioning/dashboards/json/ecosistema-rrhh.json
+      # Se interpola en provisioning/alerting/contact-points.yml (el webhook real solo vive en .env)
+      DISCORD_WEBHOOK_URL: ${DISCORD_WEBHOOK_URL:-https://discord.com/api/webhooks/0/configure-DISCORD_WEBHOOK_URL-en-.env}
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./observabilidad/grafana/provisioning:/etc/grafana/provisioning:ro
+    ports: ["127.0.0.1:${GRAFANA_PORT:-3000}:3000"]
+    depends_on:
+      prometheus: { condition: service_healthy }
+      loki: { condition: service_healthy }
+      zipkin: { condition: service_started }
+    networks: [microservices-network]
+    healthcheck: { test: [CMD, wget, -qO-, "http://127.0.0.1:3000/api/health"], interval: 10s, timeout: 3s, retries: 15, start_period: 20s }
+
+  # Integración continua opcional: docker compose --profile ci up -d --build
+  sonar-db:
+    profiles: [ci]
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: sonar
+      POSTGRES_USER: sonar
+      POSTGRES_PASSWORD: ${SONAR_DB_PASSWORD:?Configure SONAR_DB_PASSWORD en .env}
+    volumes: [sonar-db-data:/var/lib/postgresql/data]
+    networks: [ci-network]
+    healthcheck: { test: [CMD-SHELL, "pg_isready -U sonar -d sonar"], interval: 5s, timeout: 5s, retries: 20 }
+
+  sonarqube:
+    profiles: [ci]
+    image: ${SONARQUBE_IMAGE:-sonarqube:community}
+    restart: unless-stopped
+    depends_on: { sonar-db: { condition: service_healthy } }
+    environment:
+      SONAR_JDBC_URL: jdbc:postgresql://sonar-db:5432/sonar
+      SONAR_JDBC_USERNAME: sonar
+      SONAR_JDBC_PASSWORD: ${SONAR_DB_PASSWORD}
+      SONAR_SEARCH_JAVAADDITIONALOPTS: "-Dnode.store.allow_mmap=false"
+      SONAR_ES_BOOTSTRAP_CHECKS_DISABLE: "true"
+      SONAR_VALIDATEWEBHOOKS: "false"
+    ports: ["127.0.0.1:${SONAR_PORT:-9000}:9000"]
+    volumes:
+      - sonarqube-data:/opt/sonarqube/data
+      - sonarqube-logs:/opt/sonarqube/logs
+      - sonarqube-extensions:/opt/sonarqube/extensions
+    networks: [ci-network]
+
+  sonar-init:
+    profiles: [ci]
+    image: python:3.12-alpine
+    restart: "no"
+    depends_on: { sonarqube: { condition: service_started } }
+    environment:
+      SONAR_URL: http://sonarqube:9000
+      SONAR_ADMIN_PASSWORD: ${SONAR_ADMIN_PASSWORD:?Configure SONAR_ADMIN_PASSWORD en .env}
+      SONAR_MIN_COVERAGE: ${SONAR_MIN_COVERAGE:-70}
+      JENKINS_WEBHOOK_URL: http://jenkins:8080/sonarqube-webhook/
+      SONAR_PUBLIC_URL: http://localhost:${SONAR_PORT:-9000}
+      TOKEN_FILE: /run/proyecto-final/sonar-token
+    volumes:
+      - ./infra/sonarqube/init_sonar.py:/init_sonar.py:ro
+      - ci-secrets:/run/proyecto-final
+    command: [python, -u, /init_sonar.py]
+    networks: [ci-network]
+
+  registry:
+    profiles: [ci]
+    image: registry:2
+    restart: unless-stopped
+    ports: ["127.0.0.1:${REGISTRY_PORT:-5001}:5000"]
+    volumes: [registry-data:/var/lib/registry]
+    networks: [ci-network]
+
+  jenkins:
+    profiles: [ci]
+    build: { context: ./infra/jenkins, dockerfile: Dockerfile }
+    restart: unless-stopped
+    extra_hosts: ["host.docker.internal:host-gateway"]
+    depends_on:
+      sonar-init: { condition: service_completed_successfully }
+      registry: { condition: service_started }
+    ports:
+      - "127.0.0.1:${JENKINS_PORT:-8090}:8080"
+      - "127.0.0.1:${JENKINS_AGENT_PORT:-50000}:50000"
+    environment:
+      JAVA_OPTS: >-
+        -Djenkins.install.runSetupWizard=false
+        -Dhudson.plugins.git.GitSCM.ALLOW_LOCAL_CHECKOUT=true
+      CASC_JENKINS_CONFIG: /var/jenkins_home/casc_configs
+      JENKINS_ADMIN_ID: ${JENKINS_ADMIN_ID:-admin}
+      JENKINS_ADMIN_PASSWORD: ${JENKINS_ADMIN_PASSWORD:?Configure JENKINS_ADMIN_PASSWORD en .env}
+      E2E_ADMIN_EMAIL: ${E2E_ADMIN_EMAIL:?Configure E2E_ADMIN_EMAIL en .env}
+      E2E_ADMIN_PASSWORD: ${E2E_ADMIN_PASSWORD:?Configure E2E_ADMIN_PASSWORD en .env}
+      REPO_URL: ${REPO_URL:-file:///repo}
+      REPO_BRANCH: ${REPO_BRANCH:-*/main}
+      SONAR_HOST_URL_JENKINS: http://host.docker.internal:${SONAR_PORT:-9000}
+      REGISTRY_PUSH_HOST: localhost:${REGISTRY_PORT:-5001}
+      REGISTRY_API_URL: http://registry:5000
+    volumes:
+      - jenkins-data:/var/jenkins_home
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./infra/jenkins/casc.yaml:/var/jenkins_home/casc_configs/jenkins.yaml:ro
+      - ci-secrets:/run/proyecto-final:ro
+      - ..:/repo:ro
+    networks: [ci-network, microservices-network]
+
+networks:
+  microservices-network: { driver: bridge }
+  ci-network: { driver: bridge }
+  empleados-db: { internal: true }
+  departamentos-db: { internal: true }
+  perfiles-db: { internal: true }
+  notificaciones-db: { internal: true }
+  vacaciones-db: { internal: true }
+  auth-db: { internal: true }
+
+volumes:
+  rabbitmq-data:
+  vol-empleados:
+  vol-departamentos:
+  vol-perfiles:
+  vol-notificaciones:
+  vol-vacaciones:
+  vol-auth:
+  prometheus-data:
+  loki-data:
+  grafana-data:
+  jenkins-data:
+  sonar-db-data:
+  sonarqube-data:
+  sonarqube-logs:
+  sonarqube-extensions:
+  registry-data:
+  ci-secrets:

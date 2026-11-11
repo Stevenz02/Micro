@@ -1,0 +1,234 @@
+using Npgsql;
+using OpenTelemetry;
+using OpenTelemetry.Context.Propagation;
+using OpenTelemetry.Resources;
+using OpenTelemetry.Trace;
+using Prometheus;
+using Serilog;
+using Serilog.Events;
+
+var builder = WebApplication.CreateBuilder(args);
+
+// ---------------- Reto 8: observabilidad ----------------
+// Logs JSON (Serilog) con traceId tomado del Activity actual
+builder.Host.UseSerilog((_, logger) => logger
+    .MinimumLevel.Information()
+    .MinimumLevel.Override("Microsoft.AspNetCore", LogEventLevel.Warning)
+    .MinimumLevel.Override("Microsoft.Hosting.Lifetime", LogEventLevel.Information)
+    .Enrich.FromLogContext()
+    .WriteTo.Console(new JsonLogFormatter(Telemetry.ServiceName)));
+// Propagación W3C Trace Context + Baggage (OTEL_PROPAGATORS=tracecontext,baggage)
+Sdk.SetDefaultTextMapPropagator(new CompositeTextMapPropagator(new TextMapPropagator[] {
+    new TraceContextPropagator(), new BaggagePropagator() }));
+// Trazas: ASP.NET Core (spans SERVER) + spans manuales de Telemetry.Source, exportadas a Zipkin
+builder.Services.AddOpenTelemetry()
+    .ConfigureResource(resource => resource.AddService(Telemetry.ServiceName))
+    .WithTracing(tracing => tracing
+        .AddSource(Telemetry.Source.Name)
+        .AddAspNetCoreInstrumentation(options => options.Filter = context => !Telemetry.IsProbe(context.Request.Path))
+        .AddZipkinExporter(options => options.Endpoint = new Uri(
+            Environment.GetEnvironmentVariable("OTEL_EXPORTER_ZIPKIN_ENDPOINT") ?? "http://zipkin:9411/api/v2/spans")));
+
+builder.Services.AddEndpointsApiExplorer();
+builder.Services.AddSwaggerGen();
+var required = new[] { "DB_HOST", "DB_NAME", "DB_USER", "DB_PASSWORD" };
+foreach (var key in required)
+    if (string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable(key)))
+        throw new InvalidOperationException($"Falta la variable {key}");
+var connection = new NpgsqlConnectionStringBuilder {
+    Host = Environment.GetEnvironmentVariable("DB_HOST"),
+    Port = int.Parse(Environment.GetEnvironmentVariable("DB_PORT") ?? "5432"),
+    Database = Environment.GetEnvironmentVariable("DB_NAME"),
+    Username = Environment.GetEnvironmentVariable("DB_USER"),
+    Password = Environment.GetEnvironmentVariable("DB_PASSWORD"),
+    Timeout = 5,
+    CommandTimeout = 5,
+}.ConnectionString;
+builder.Services.AddSingleton(new NpgsqlDataSourceBuilder(connection).Build());
+builder.Services.AddSingleton<VacacionesRepository>();
+builder.Services.AddSingleton<RabbitPublisher>();
+builder.Services.AddSingleton<IVacationScheduleStore>(sp => sp.GetRequiredService<VacacionesRepository>());
+builder.Services.AddSingleton<IVacationEventsPublisher>(sp => sp.GetRequiredService<RabbitPublisher>());
+builder.Services.AddSingleton(TimeProvider.System);
+builder.Services.AddHostedService<EmployeeEventsConsumer>();
+builder.Services.AddHostedService<VacationScheduler>();
+
+var app = builder.Build();
+await app.Services.GetRequiredService<VacacionesRepository>().EnsureSchema();
+app.UseSwagger(c => c.RouteTemplate = "vacaciones/{documentName}/openapi.json");
+app.UseSwaggerUI(c => { c.RoutePrefix = "vacaciones/docs"; c.SwaggerEndpoint("/vacaciones/v1/openapi.json", "Vacaciones v8"); });
+
+app.UseRequestObservability();   // Reto 8: métricas http_* y log JSON por petición
+app.MapMetrics();                // Reto 8: GET /metrics en formato Prometheus
+
+// Reto 8: formato común {status, service, checks}; 200 si UP, 503 si DOWN
+app.MapGet("/health", async (NpgsqlDataSource db) => {
+    var database = "UP";
+    try { await using var cmd = db.CreateCommand("SELECT 1"); await cmd.ExecuteScalarAsync(); }
+    catch { database = "DOWN"; }
+    var broker = Telemetry.BrokerUp ? "UP" : "DOWN";
+    var up = database == "UP" && broker == "UP";
+    return Results.Json(new {
+        status = up ? "UP" : "DOWN",
+        service = Telemetry.ServiceName,
+        checks = new { database, messageBroker = broker },
+    }, statusCode: up ? 200 : 503);
+});
+
+app.MapPost("/vacaciones", async (VacacionRequest request, VacacionesRepository repo, RabbitPublisher publisher, ILogger<Program> logger) => {
+    if (string.IsNullOrWhiteSpace(request.Id)) {
+        var generatedId = $"V-{DateTime.UtcNow:yyyy}-{Guid.NewGuid().ToString("N")[..6].ToUpperInvariant()}";
+        request = request with { Id = generatedId };
+    }
+    var dateError = VacationRules.ValidateDates(request.FechaInicio, request.FechaFin, DateOnly.FromDateTime(DateTime.UtcNow));
+    if (dateError is not null) return Results.BadRequest(new { detail = dateError });
+    var employee = await repo.GetEmployee(request.EmpleadoId);
+    if (employee is null) return Results.BadRequest(new { detail = $"El empleado {request.EmpleadoId} no existe en la replica local" });
+    if (employee.Estado == "RETIRADO") return Results.BadRequest(new { detail = $"El empleado {request.EmpleadoId} esta retirado" });
+    if (string.IsNullOrWhiteSpace(employee.Email)) return Results.BadRequest(new { detail = "La replica del empleado no tiene email para el evento oficial" });
+    var conflict = await repo.FindConflict(request.EmpleadoId, request.FechaInicio, request.FechaFin);
+    if (conflict is not null) return Results.BadRequest(new { detail = $"El periodo se solapa con {conflict.FechaInicio:yyyy-MM-dd} a {conflict.FechaFin:yyyy-MM-dd}" });
+    try {
+        var created = await repo.Create(request);
+        logger.LogInformation("Vacaciones programadas {VacacionesId} para {EmployeeId}", created.Id, created.EmpleadoId);
+        try { publisher.PublishScheduled(created, employee.Email); }
+        catch (Exception exception) { logger.LogError(exception, "No se pudo publicar vacaciones.programadas para {Id} tras commit de BD", created.Id); }
+        return Results.Created($"/vacaciones/{created.Id}", created);
+    }
+    catch (PostgresException ex) when (ex.SqlState == PostgresErrorCodes.UniqueViolation) { return Results.BadRequest(new { detail = $"La vacacion {request.Id} ya existe" }); }
+}).Produces<Vacacion>(201).Produces(400);
+
+app.MapGet("/vacaciones", async (string? empleadoId, VacacionesRepository repo) => Results.Ok(await repo.List(empleadoId)));
+app.MapGet("/vacaciones/{id}", async (string id, VacacionesRepository repo) => {
+    var item = await repo.Get(id); return item is null ? Results.NotFound(new { detail = $"La vacacion {id} no existe" }) : Results.Ok(item);
+}).Produces<Vacacion>().Produces(404);
+app.MapDelete("/vacaciones/{id}", async (string id, VacacionesRepository repo) => {
+    var current = await repo.Get(id);
+    if (current is null) return Results.NotFound(new { detail = $"La vacacion {id} no existe" });
+    if (current.Estado == "CANCELADA") return Results.BadRequest(new { detail = "La vacacion ya esta cancelada" });
+    if (current.FechaInicio <= DateOnly.FromDateTime(DateTime.UtcNow)) return Results.BadRequest(new { detail = "No se puede cancelar una vacacion que ya inicio" });
+    return Results.Ok(await repo.Cancel(id));
+}).Produces<Vacacion>().Produces(400).Produces(404);
+
+app.Run();
+
+public record VacacionRequest(string? Id, string EmpleadoId, DateOnly FechaInicio, DateOnly FechaFin);
+public record Vacacion(string Id, string EmpleadoId, DateOnly FechaInicio, DateOnly FechaFin, string Estado, DateTimeOffset FechaCreacion);
+public record EmpleadoReplica(string Estado, string? Email);
+
+public static class VacationRules {
+    public static string? ValidateDates(DateOnly start, DateOnly end, DateOnly today) {
+        if (end < start) return "fechaFin no puede ser anterior a fechaInicio";
+        if (start < today) return "fechaInicio no puede estar en el pasado";
+        return null;
+    }
+    public static bool Overlaps(DateOnly newStart, DateOnly newEnd, DateOnly existingStart, DateOnly existingEnd) => newStart <= existingEnd && newEnd >= existingStart;
+    public static int BusinessDays(DateOnly start, DateOnly end) {
+        var count = 0;
+        for (var day = start; day <= end; day = day.AddDays(1))
+            if (day.DayOfWeek is not (DayOfWeek.Saturday or DayOfWeek.Sunday)) count++;
+        return count;
+    }
+}
+
+public sealed class VacacionesRepository(NpgsqlDataSource db) : IVacationScheduleStore {
+    private const string Columns = "id,empleado_id,fecha_inicio,fecha_fin,estado,fecha_creacion";
+    private static Vacacion Read(NpgsqlDataReader r) => new(r.GetString(0), r.GetString(1), r.GetFieldValue<DateOnly>(2), r.GetFieldValue<DateOnly>(3), r.GetString(4), r.GetFieldValue<DateTimeOffset>(5));
+    public async Task EnsureSchema() {
+        await using var cmd = db.CreateCommand("ALTER TABLE empleados_replica ADD COLUMN IF NOT EXISTS email TEXT");
+        await cmd.ExecuteNonQueryAsync();
+        await using var dates = db.CreateCommand("ALTER TABLE vacaciones DROP CONSTRAINT IF EXISTS vacaciones_check; " +
+            "ALTER TABLE vacaciones DROP CONSTRAINT IF EXISTS vacaciones_fechas_check; " +
+            "ALTER TABLE vacaciones ADD CONSTRAINT vacaciones_fechas_check CHECK (fecha_fin >= fecha_inicio)");
+        await dates.ExecuteNonQueryAsync();
+    }
+    public async Task<EmpleadoReplica?> GetEmployee(string id) {
+        await using var cmd = db.CreateCommand("SELECT estado,email FROM empleados_replica WHERE empleado_id=$1");
+        cmd.Parameters.AddWithValue(id);
+        await using var reader = await cmd.ExecuteReaderAsync();
+        return await reader.ReadAsync() ? new EmpleadoReplica(reader.GetString(0), reader.IsDBNull(1) ? null : reader.GetString(1)) : null;
+    }
+    public async Task<bool> ApplyEmployeeEvent(EmployeeEvent message) {
+        var (employeeId, email, state) = EmployeeEventProjection.Validate(message);
+        await using var connection = await db.OpenConnectionAsync();
+        await using var transaction = await connection.BeginTransactionAsync();
+        await using var marker = new NpgsqlCommand("INSERT INTO eventos_procesados(id) VALUES($1) ON CONFLICT DO NOTHING", connection, transaction);
+        marker.Parameters.AddWithValue(message.Id);
+        if (await marker.ExecuteNonQueryAsync() == 0) {
+            await transaction.CommitAsync();
+            return false;
+        }
+        var sql = state == "RETIRADO"
+            ? "INSERT INTO empleados_replica(empleado_id,estado,email) VALUES($1,'RETIRADO',$2) ON CONFLICT(empleado_id) DO UPDATE SET estado='RETIRADO',email=EXCLUDED.email,actualizado_en=CURRENT_TIMESTAMP"
+            : state == "ACTUALIZADO"
+                ? "INSERT INTO empleados_replica(empleado_id,estado,email) VALUES($1,'ACTIVO',$2) ON CONFLICT(empleado_id) DO UPDATE SET email=EXCLUDED.email,actualizado_en=CURRENT_TIMESTAMP"
+                : "INSERT INTO empleados_replica(empleado_id,estado,email) VALUES($1,'ACTIVO',$2) ON CONFLICT(empleado_id) DO UPDATE SET estado=CASE WHEN empleados_replica.estado='RETIRADO' THEN 'RETIRADO' ELSE 'ACTIVO' END,email=EXCLUDED.email,actualizado_en=CURRENT_TIMESTAMP";
+        await using var update = new NpgsqlCommand(sql, connection, transaction);
+        update.Parameters.AddWithValue(employeeId);
+        update.Parameters.AddWithValue(email);
+        await update.ExecuteNonQueryAsync();
+        await transaction.CommitAsync();
+        return true;
+    }
+    public async Task<Vacacion?> FindConflict(string employee, DateOnly start, DateOnly end) {
+        await using var cmd = db.CreateCommand($"SELECT {Columns} FROM vacaciones WHERE empleado_id=$1 AND estado IN ('PROGRAMADA','EN_CURSO') AND $2 <= fecha_fin AND $3 >= fecha_inicio ORDER BY fecha_inicio LIMIT 1");
+        cmd.Parameters.AddWithValue(employee); cmd.Parameters.AddWithValue(start); cmd.Parameters.AddWithValue(end);
+        await using var reader = await cmd.ExecuteReaderAsync(); return await reader.ReadAsync() ? Read(reader) : null;
+    }
+    public async Task<Vacacion> Create(VacacionRequest value) {
+        await using var cmd = db.CreateCommand($"INSERT INTO vacaciones(id,empleado_id,fecha_inicio,fecha_fin,estado) VALUES($1,$2,$3,$4,'PROGRAMADA') RETURNING {Columns}");
+        var id = value.Id ?? throw new InvalidOperationException("La vacación debe tener un ID antes de persistirse");
+        cmd.Parameters.AddWithValue(id); cmd.Parameters.AddWithValue(value.EmpleadoId); cmd.Parameters.AddWithValue(value.FechaInicio); cmd.Parameters.AddWithValue(value.FechaFin);
+        await using var reader = await cmd.ExecuteReaderAsync(); await reader.ReadAsync(); return Read(reader);
+    }
+    public async Task<Vacacion?> Get(string id) {
+        await using var cmd = db.CreateCommand($"SELECT {Columns} FROM vacaciones WHERE id=$1"); cmd.Parameters.AddWithValue(id); await using var reader = await cmd.ExecuteReaderAsync(); return await reader.ReadAsync() ? Read(reader) : null;
+    }
+    public async Task<List<Vacacion>> List(string? employee) {
+        var sql = $"SELECT {Columns} FROM vacaciones" + (employee is null ? "" : " WHERE empleado_id=$1") + " ORDER BY fecha_inicio,id"; await using var cmd = db.CreateCommand(sql); if (employee is not null) cmd.Parameters.AddWithValue(employee);
+        await using var reader = await cmd.ExecuteReaderAsync(); var result = new List<Vacacion>(); while (await reader.ReadAsync()) result.Add(Read(reader)); return result;
+    }
+    public async Task<Vacacion> Cancel(string id) {
+        await using var cmd = db.CreateCommand($"UPDATE vacaciones SET estado='CANCELADA' WHERE id=$1 RETURNING {Columns}"); cmd.Parameters.AddWithValue(id); await using var reader = await cmd.ExecuteReaderAsync(); await reader.ReadAsync(); return Read(reader);
+    }
+
+    public async Task<IReadOnlyList<string>> DueIds(string state, DateOnly today) {
+        var dateColumn = state switch {
+            "PROGRAMADA" => "fecha_inicio",
+            "EN_CURSO" => "fecha_fin",
+            _ => throw new ArgumentException("Estado no admitido para scheduler", nameof(state)),
+        };
+        await using var cmd = db.CreateCommand($"SELECT id FROM vacaciones WHERE estado=$1 AND {dateColumn}<=$2 ORDER BY {dateColumn},id LIMIT 100");
+        cmd.Parameters.AddWithValue(state);
+        cmd.Parameters.AddWithValue(today);
+        await using var reader = await cmd.ExecuteReaderAsync();
+        var result = new List<string>();
+        while (await reader.ReadAsync()) result.Add(reader.GetString(0));
+        return result;
+    }
+
+    public async Task<ScheduledTransition?> TransitionIfDue(string id, string expectedState, DateOnly today) {
+        var (dateColumn, newState) = expectedState switch {
+            "PROGRAMADA" => ("fecha_inicio", "EN_CURSO"),
+            "EN_CURSO" => ("fecha_fin", "FINALIZADA"),
+            _ => throw new ArgumentException("Estado no admitido para scheduler", nameof(expectedState)),
+        };
+        var sql = $"UPDATE vacaciones v SET estado='{newState}' FROM empleados_replica e " +
+            $"WHERE v.id=$1 AND v.estado=$2 AND v.{dateColumn}<=$3 " +
+            "AND e.empleado_id=v.empleado_id AND NULLIF(e.email,'') IS NOT NULL " +
+            (expectedState == "PROGRAMADA" ? "AND e.estado='ACTIVO' " : "") +
+            $"RETURNING {string.Join(',', Columns.Split(',').Select(c => "v." + c))}," +
+            "(SELECT email FROM empleados_replica WHERE empleado_id=v.empleado_id)";
+        await using var cmd = db.CreateCommand(sql);
+        cmd.Parameters.AddWithValue(id);
+        cmd.Parameters.AddWithValue(expectedState);
+        cmd.Parameters.AddWithValue(today);
+        await using var reader = await cmd.ExecuteReaderAsync();
+        if (!await reader.ReadAsync()) return null;
+        var vacation = Read(reader);
+        var email = reader.GetString(6);
+        return new ScheduledTransition(vacation, email);
+    }
+}
+
+public partial class Program { }

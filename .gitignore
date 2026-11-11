@@ -5,6 +5,28 @@ __pycache__/
 .vscode/
 .idea/
 .tmp/
+tmp/
+
+# Configuracion local de asistentes y del entorno Codex
+.codex/
+
+# Graphify: conservar graph.html, graph.json, GRAPH_REPORT.md y GRAPH_TREE.html
+# pero no rutas locales, cache, manifiestos ni historial de ejecucion.
+graphify-out/cache/
+graphify-out/.graphify_*
+graphify-out/cost.json
+graphify-out/manifest.json
+
+# Los documentos fuente ya fueron convertidos a Markdown.
+Docs/*.pdf
+
+# Caches de analizadores y del sistema operativo
+.mypy_cache/
+.ruff_cache/
+.pyright/
+.DS_Store
+Thumbs.db
+
 .env
 .env.*
 !.env.example
@@ -21,3 +43,4 @@ htmlcov/
 coverage/
 reports/
 *.trx
+secrets/

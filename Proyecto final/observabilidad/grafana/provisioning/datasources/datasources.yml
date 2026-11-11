@@ -1,0 +1,44 @@
+# Reto 8 - Fuentes de datos aprovisionadas automáticamente (sin configuración manual en la UI)
+apiVersion: 1
+
+datasources:
+  - name: Prometheus
+    uid: prometheus
+    type: prometheus
+    access: proxy
+    url: http://prometheus:9090        # nombre de red Docker, no localhost
+    isDefault: true
+    editable: false
+    jsonData:
+      timeInterval: 15s
+
+  - name: Loki
+    uid: loki
+    type: loki
+    access: proxy
+    url: http://loki:3100
+    editable: false
+    jsonData:
+      maxLines: 1000
+      # Desde un log JSON se salta a la traza en Zipkin usando su traceId
+      derivedFields:
+        - name: traceId
+          matcherRegex: '"traceId":\s*"(\w+)"'
+          url: '$${__value.raw}'
+          datasourceUid: zipkin
+          urlDisplayLabel: Ver traza en Zipkin
+
+  - name: Zipkin
+    uid: zipkin
+    type: zipkin
+    access: proxy
+    url: http://zipkin:9411
+    editable: false
+    jsonData:
+      tracesToLogsV2:
+        datasourceUid: loki
+        filterByTraceID: true
+        spanStartTimeShift: '-5m'
+        spanEndTimeShift: '5m'
+        customQuery: true
+        query: '{service=~".+"} |= "$${__trace.traceId}"'
