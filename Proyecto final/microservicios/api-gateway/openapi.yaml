@@ -22,7 +22,7 @@ paths:
   /health/dependencies:
     get:
       tags:
-      - Salud
+      - Empleados
       summary: Dependencies
       operationId: dependencies_health_dependencies_get
       responses:
@@ -31,6 +31,16 @@ paths:
           content:
             application/json:
               schema: {}
+        '503':
+          description: Base de datos no disponible
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Empleados_Error'
+        '401':
+          description: Bearer ausente o inválido
+        '403':
+          description: Permiso insuficiente
       security:
       - BearerAuth: []
   /empleados/{empleado_id}/completo:
@@ -68,796 +78,6 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
-      security:
-      - BearerAuth: []
-  /empleados:
-    get:
-      tags:
-      - Proxy
-      summary: Empleados
-      operationId: empleados_empleados_get
-      responses:
-        '200':
-          description: Successful Response
-          content:
-            application/json:
-              schema: {}
-      security:
-      - BearerAuth: []
-    put:
-      tags:
-      - Proxy
-      summary: Empleados
-      operationId: empleados_empleados_put
-      responses:
-        '200':
-          description: Successful Response
-          content:
-            application/json:
-              schema: {}
-      security:
-      - BearerAuth: []
-    post:
-      tags:
-      - Proxy
-      summary: Empleados
-      operationId: empleados_empleados_post
-      responses:
-        '200':
-          description: Successful Response
-          content:
-            application/json:
-              schema: {}
-      security:
-      - BearerAuth: []
-    delete:
-      tags:
-      - Proxy
-      summary: Empleados
-      operationId: empleados_empleados_delete
-      responses:
-        '200':
-          description: Successful Response
-          content:
-            application/json:
-              schema: {}
-      security:
-      - BearerAuth: []
-    options:
-      tags:
-      - Proxy
-      summary: Empleados
-      operationId: empleados_empleados_options
-      responses:
-        '200':
-          description: Successful Response
-          content:
-            application/json:
-              schema: {}
-      security:
-      - BearerAuth: []
-    patch:
-      tags:
-      - Proxy
-      summary: Empleados
-      operationId: empleados_empleados_patch
-      responses:
-        '200':
-          description: Successful Response
-          content:
-            application/json:
-              schema: {}
-      security:
-      - BearerAuth: []
-  /empleados/{path}:
-    get:
-      tags:
-      - Proxy
-      summary: Empleados
-      operationId: empleados_empleados__path__get
-      responses:
-        '200':
-          description: Successful Response
-          content:
-            application/json:
-              schema: {}
-      security:
-      - BearerAuth: []
-    put:
-      tags:
-      - Proxy
-      summary: Empleados
-      operationId: empleados_empleados__path__put
-      responses:
-        '200':
-          description: Successful Response
-          content:
-            application/json:
-              schema: {}
-      security:
-      - BearerAuth: []
-    post:
-      tags:
-      - Proxy
-      summary: Empleados
-      operationId: empleados_empleados__path__post
-      responses:
-        '200':
-          description: Successful Response
-          content:
-            application/json:
-              schema: {}
-      security:
-      - BearerAuth: []
-    delete:
-      tags:
-      - Proxy
-      summary: Empleados
-      operationId: empleados_empleados__path__delete
-      responses:
-        '200':
-          description: Successful Response
-          content:
-            application/json:
-              schema: {}
-      security:
-      - BearerAuth: []
-    options:
-      tags:
-      - Proxy
-      summary: Empleados
-      operationId: empleados_empleados__path__options
-      responses:
-        '200':
-          description: Successful Response
-          content:
-            application/json:
-              schema: {}
-      security:
-      - BearerAuth: []
-    patch:
-      tags:
-      - Proxy
-      summary: Empleados
-      operationId: empleados_empleados__path__patch
-      responses:
-        '200':
-          description: Successful Response
-          content:
-            application/json:
-              schema: {}
-      security:
-      - BearerAuth: []
-  /departamentos:
-    get:
-      tags:
-      - Proxy
-      summary: Departamentos
-      operationId: departamentos_departamentos_get
-      responses:
-        '200':
-          description: Successful Response
-          content:
-            application/json:
-              schema: {}
-      security:
-      - BearerAuth: []
-    put:
-      tags:
-      - Proxy
-      summary: Departamentos
-      operationId: departamentos_departamentos_put
-      responses:
-        '200':
-          description: Successful Response
-          content:
-            application/json:
-              schema: {}
-      security:
-      - BearerAuth: []
-    post:
-      tags:
-      - Proxy
-      summary: Departamentos
-      operationId: departamentos_departamentos_post
-      responses:
-        '200':
-          description: Successful Response
-          content:
-            application/json:
-              schema: {}
-      security:
-      - BearerAuth: []
-    delete:
-      tags:
-      - Proxy
-      summary: Departamentos
-      operationId: departamentos_departamentos_delete
-      responses:
-        '200':
-          description: Successful Response
-          content:
-            application/json:
-              schema: {}
-      security:
-      - BearerAuth: []
-    options:
-      tags:
-      - Proxy
-      summary: Departamentos
-      operationId: departamentos_departamentos_options
-      responses:
-        '200':
-          description: Successful Response
-          content:
-            application/json:
-              schema: {}
-      security:
-      - BearerAuth: []
-    patch:
-      tags:
-      - Proxy
-      summary: Departamentos
-      operationId: departamentos_departamentos_patch
-      responses:
-        '200':
-          description: Successful Response
-          content:
-            application/json:
-              schema: {}
-      security:
-      - BearerAuth: []
-  /departamentos/{path}:
-    get:
-      tags:
-      - Proxy
-      summary: Departamentos
-      operationId: departamentos_departamentos__path__get
-      responses:
-        '200':
-          description: Successful Response
-          content:
-            application/json:
-              schema: {}
-      security:
-      - BearerAuth: []
-    put:
-      tags:
-      - Proxy
-      summary: Departamentos
-      operationId: departamentos_departamentos__path__put
-      responses:
-        '200':
-          description: Successful Response
-          content:
-            application/json:
-              schema: {}
-      security:
-      - BearerAuth: []
-    post:
-      tags:
-      - Proxy
-      summary: Departamentos
-      operationId: departamentos_departamentos__path__post
-      responses:
-        '200':
-          description: Successful Response
-          content:
-            application/json:
-              schema: {}
-      security:
-      - BearerAuth: []
-    delete:
-      tags:
-      - Proxy
-      summary: Departamentos
-      operationId: departamentos_departamentos__path__delete
-      responses:
-        '200':
-          description: Successful Response
-          content:
-            application/json:
-              schema: {}
-      security:
-      - BearerAuth: []
-    options:
-      tags:
-      - Proxy
-      summary: Departamentos
-      operationId: departamentos_departamentos__path__options
-      responses:
-        '200':
-          description: Successful Response
-          content:
-            application/json:
-              schema: {}
-      security:
-      - BearerAuth: []
-    patch:
-      tags:
-      - Proxy
-      summary: Departamentos
-      operationId: departamentos_departamentos__path__patch
-      responses:
-        '200':
-          description: Successful Response
-          content:
-            application/json:
-              schema: {}
-      security:
-      - BearerAuth: []
-  /perfiles:
-    get:
-      tags:
-      - Proxy
-      summary: Perfiles
-      operationId: perfiles_perfiles_get
-      responses:
-        '200':
-          description: Successful Response
-          content:
-            application/json:
-              schema: {}
-      security:
-      - BearerAuth: []
-    put:
-      tags:
-      - Proxy
-      summary: Perfiles
-      operationId: perfiles_perfiles_put
-      responses:
-        '200':
-          description: Successful Response
-          content:
-            application/json:
-              schema: {}
-      security:
-      - BearerAuth: []
-    post:
-      tags:
-      - Proxy
-      summary: Perfiles
-      operationId: perfiles_perfiles_post
-      responses:
-        '200':
-          description: Successful Response
-          content:
-            application/json:
-              schema: {}
-      security:
-      - BearerAuth: []
-    delete:
-      tags:
-      - Proxy
-      summary: Perfiles
-      operationId: perfiles_perfiles_delete
-      responses:
-        '200':
-          description: Successful Response
-          content:
-            application/json:
-              schema: {}
-      security:
-      - BearerAuth: []
-    options:
-      tags:
-      - Proxy
-      summary: Perfiles
-      operationId: perfiles_perfiles_options
-      responses:
-        '200':
-          description: Successful Response
-          content:
-            application/json:
-              schema: {}
-      security:
-      - BearerAuth: []
-    patch:
-      tags:
-      - Proxy
-      summary: Perfiles
-      operationId: perfiles_perfiles_patch
-      responses:
-        '200':
-          description: Successful Response
-          content:
-            application/json:
-              schema: {}
-      security:
-      - BearerAuth: []
-  /perfiles/{path}:
-    get:
-      tags:
-      - Proxy
-      summary: Perfiles
-      operationId: perfiles_perfiles__path__get
-      responses:
-        '200':
-          description: Successful Response
-          content:
-            application/json:
-              schema: {}
-      security:
-      - BearerAuth: []
-    put:
-      tags:
-      - Proxy
-      summary: Perfiles
-      operationId: perfiles_perfiles__path__put
-      responses:
-        '200':
-          description: Successful Response
-          content:
-            application/json:
-              schema: {}
-      security:
-      - BearerAuth: []
-    post:
-      tags:
-      - Proxy
-      summary: Perfiles
-      operationId: perfiles_perfiles__path__post
-      responses:
-        '200':
-          description: Successful Response
-          content:
-            application/json:
-              schema: {}
-      security:
-      - BearerAuth: []
-    delete:
-      tags:
-      - Proxy
-      summary: Perfiles
-      operationId: perfiles_perfiles__path__delete
-      responses:
-        '200':
-          description: Successful Response
-          content:
-            application/json:
-              schema: {}
-      security:
-      - BearerAuth: []
-    options:
-      tags:
-      - Proxy
-      summary: Perfiles
-      operationId: perfiles_perfiles__path__options
-      responses:
-        '200':
-          description: Successful Response
-          content:
-            application/json:
-              schema: {}
-      security:
-      - BearerAuth: []
-    patch:
-      tags:
-      - Proxy
-      summary: Perfiles
-      operationId: perfiles_perfiles__path__patch
-      responses:
-        '200':
-          description: Successful Response
-          content:
-            application/json:
-              schema: {}
-      security:
-      - BearerAuth: []
-  /notificaciones:
-    get:
-      tags:
-      - Proxy
-      summary: Notificaciones
-      operationId: notificaciones_notificaciones_get
-      responses:
-        '200':
-          description: Successful Response
-          content:
-            application/json:
-              schema: {}
-      security:
-      - BearerAuth: []
-    put:
-      tags:
-      - Proxy
-      summary: Notificaciones
-      operationId: notificaciones_notificaciones_put
-      responses:
-        '200':
-          description: Successful Response
-          content:
-            application/json:
-              schema: {}
-      security:
-      - BearerAuth: []
-    post:
-      tags:
-      - Proxy
-      summary: Notificaciones
-      operationId: notificaciones_notificaciones_post
-      responses:
-        '200':
-          description: Successful Response
-          content:
-            application/json:
-              schema: {}
-      security:
-      - BearerAuth: []
-    delete:
-      tags:
-      - Proxy
-      summary: Notificaciones
-      operationId: notificaciones_notificaciones_delete
-      responses:
-        '200':
-          description: Successful Response
-          content:
-            application/json:
-              schema: {}
-      security:
-      - BearerAuth: []
-    options:
-      tags:
-      - Proxy
-      summary: Notificaciones
-      operationId: notificaciones_notificaciones_options
-      responses:
-        '200':
-          description: Successful Response
-          content:
-            application/json:
-              schema: {}
-      security:
-      - BearerAuth: []
-    patch:
-      tags:
-      - Proxy
-      summary: Notificaciones
-      operationId: notificaciones_notificaciones_patch
-      responses:
-        '200':
-          description: Successful Response
-          content:
-            application/json:
-              schema: {}
-      security:
-      - BearerAuth: []
-  /notificaciones/{path}:
-    get:
-      tags:
-      - Proxy
-      summary: Notificaciones
-      operationId: notificaciones_notificaciones__path__get
-      responses:
-        '200':
-          description: Successful Response
-          content:
-            application/json:
-              schema: {}
-      security:
-      - BearerAuth: []
-    put:
-      tags:
-      - Proxy
-      summary: Notificaciones
-      operationId: notificaciones_notificaciones__path__put
-      responses:
-        '200':
-          description: Successful Response
-          content:
-            application/json:
-              schema: {}
-      security:
-      - BearerAuth: []
-    post:
-      tags:
-      - Proxy
-      summary: Notificaciones
-      operationId: notificaciones_notificaciones__path__post
-      responses:
-        '200':
-          description: Successful Response
-          content:
-            application/json:
-              schema: {}
-      security:
-      - BearerAuth: []
-    delete:
-      tags:
-      - Proxy
-      summary: Notificaciones
-      operationId: notificaciones_notificaciones__path__delete
-      responses:
-        '200':
-          description: Successful Response
-          content:
-            application/json:
-              schema: {}
-      security:
-      - BearerAuth: []
-    options:
-      tags:
-      - Proxy
-      summary: Notificaciones
-      operationId: notificaciones_notificaciones__path__options
-      responses:
-        '200':
-          description: Successful Response
-          content:
-            application/json:
-              schema: {}
-      security:
-      - BearerAuth: []
-    patch:
-      tags:
-      - Proxy
-      summary: Notificaciones
-      operationId: notificaciones_notificaciones__path__patch
-      responses:
-        '200':
-          description: Successful Response
-          content:
-            application/json:
-              schema: {}
-      security:
-      - BearerAuth: []
-  /vacaciones:
-    get:
-      tags:
-      - Proxy
-      summary: Vacaciones
-      operationId: vacaciones_vacaciones_get
-      responses:
-        '200':
-          description: Successful Response
-          content:
-            application/json:
-              schema: {}
-      security:
-      - BearerAuth: []
-    put:
-      tags:
-      - Proxy
-      summary: Vacaciones
-      operationId: vacaciones_vacaciones_put
-      responses:
-        '200':
-          description: Successful Response
-          content:
-            application/json:
-              schema: {}
-      security:
-      - BearerAuth: []
-    post:
-      tags:
-      - Proxy
-      summary: Vacaciones
-      operationId: vacaciones_vacaciones_post
-      responses:
-        '200':
-          description: Successful Response
-          content:
-            application/json:
-              schema: {}
-      security:
-      - BearerAuth: []
-    delete:
-      tags:
-      - Proxy
-      summary: Vacaciones
-      operationId: vacaciones_vacaciones_delete
-      responses:
-        '200':
-          description: Successful Response
-          content:
-            application/json:
-              schema: {}
-      security:
-      - BearerAuth: []
-    options:
-      tags:
-      - Proxy
-      summary: Vacaciones
-      operationId: vacaciones_vacaciones_options
-      responses:
-        '200':
-          description: Successful Response
-          content:
-            application/json:
-              schema: {}
-      security:
-      - BearerAuth: []
-    patch:
-      tags:
-      - Proxy
-      summary: Vacaciones
-      operationId: vacaciones_vacaciones_patch
-      responses:
-        '200':
-          description: Successful Response
-          content:
-            application/json:
-              schema: {}
-      security:
-      - BearerAuth: []
-  /vacaciones/{path}:
-    get:
-      tags:
-      - Proxy
-      summary: Vacaciones
-      operationId: vacaciones_vacaciones__path__get
-      responses:
-        '200':
-          description: Successful Response
-          content:
-            application/json:
-              schema: {}
-      security:
-      - BearerAuth: []
-    put:
-      tags:
-      - Proxy
-      summary: Vacaciones
-      operationId: vacaciones_vacaciones__path__put
-      responses:
-        '200':
-          description: Successful Response
-          content:
-            application/json:
-              schema: {}
-      security:
-      - BearerAuth: []
-    post:
-      tags:
-      - Proxy
-      summary: Vacaciones
-      operationId: vacaciones_vacaciones__path__post
-      responses:
-        '200':
-          description: Successful Response
-          content:
-            application/json:
-              schema: {}
-      security:
-      - BearerAuth: []
-    delete:
-      tags:
-      - Proxy
-      summary: Vacaciones
-      operationId: vacaciones_vacaciones__path__delete
-      responses:
-        '200':
-          description: Successful Response
-          content:
-            application/json:
-              schema: {}
-      security:
-      - BearerAuth: []
-    options:
-      tags:
-      - Proxy
-      summary: Vacaciones
-      operationId: vacaciones_vacaciones__path__options
-      responses:
-        '200':
-          description: Successful Response
-          content:
-            application/json:
-              schema: {}
-      security:
-      - BearerAuth: []
-    patch:
-      tags:
-      - Proxy
-      summary: Vacaciones
-      operationId: vacaciones_vacaciones__path__patch
-      responses:
-        '200':
-          description: Successful Response
-          content:
-            application/json:
-              schema: {}
       security:
       - BearerAuth: []
   /auth/login:
@@ -1009,6 +229,811 @@ paths:
               type: object
       security:
       - BearerAuth: []
+  /empleados:
+    post:
+      tags:
+      - Empleados
+      summary: Registrar empleado activo o pendiente
+      operationId: registrar_empleados_post
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Empleados_Empleado'
+      responses:
+        '201':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Empleados_Empleado'
+        '400':
+          description: Email, numero o id duplicado; departamento inexistente
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Empleados_Error'
+        '404':
+          description: Recurso no encontrado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Empleados_Error'
+        '500':
+          description: Error interno de persistencia
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Empleados_Error'
+        '503':
+          description: Base de datos no disponible
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Empleados_Error'
+        '202':
+          description: Empleado recibido en estado PENDIENTE por dependencia no disponible
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Empleados_Empleado'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Empleados_HTTPValidationError'
+        '401':
+          description: Bearer ausente o inválido
+        '403':
+          description: Permiso insuficiente
+      security:
+      - BearerAuth: []
+    get:
+      tags:
+      - Empleados
+      summary: Listar empleados
+      operationId: listar_empleados_get
+      parameters:
+      - name: estado
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - enum:
+            - ACTIVO
+            - EN_VACACIONES
+            - RETIRADO
+            - PENDIENTE
+            - RECHAZADO
+            type: string
+          - type: 'null'
+          title: Estado
+      - name: desde
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+            format: date
+          - type: 'null'
+          title: Desde
+      - name: hasta
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+            format: date
+          - type: 'null'
+          title: Hasta
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Empleados_Empleado'
+                title: Response Listar Empleados Get
+        '500':
+          description: Error interno de persistencia
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Empleados_Error'
+        '503':
+          description: Base de datos no disponible
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Empleados_Error'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Empleados_HTTPValidationError'
+        '401':
+          description: Bearer ausente o inválido
+        '403':
+          description: Permiso insuficiente
+      security:
+      - BearerAuth: []
+  /empleados/{id}:
+    put:
+      tags:
+      - Empleados
+      summary: Actualizar un empleado activo sin modificar su identidad o estado
+      operationId: actualizar_empleados__id__put
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Empleados_EmpleadoActualizacion'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Empleados_Empleado'
+        '400':
+          description: Email, numero o id duplicado; departamento inexistente
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Empleados_Error'
+        '404':
+          description: Recurso no encontrado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Empleados_Error'
+        '500':
+          description: Error interno de persistencia
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Empleados_Error'
+        '503':
+          description: Base de datos no disponible
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Empleados_Error'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Empleados_HTTPValidationError'
+        '401':
+          description: Bearer ausente o inválido
+        '403':
+          description: Permiso insuficiente
+      security:
+      - BearerAuth: []
+    delete:
+      tags:
+      - Empleados
+      summary: Retirar un empleado mediante baja logica
+      operationId: retirar_empleados__id__delete
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Id
+      - name: motivo
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Motivo obligatorio para el primer retiro; la repetición idempotente no lo requiere
+          title: Motivo
+        description: Motivo obligatorio para el primer retiro; la repetición idempotente no lo requiere
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Empleados_Empleado'
+        '400':
+          description: Email, numero o id duplicado; departamento inexistente
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Empleados_Error'
+        '404':
+          description: Recurso no encontrado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Empleados_Error'
+        '500':
+          description: Error interno de persistencia
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Empleados_Error'
+        '503':
+          description: Base de datos no disponible
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Empleados_Error'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Empleados_HTTPValidationError'
+        '401':
+          description: Bearer ausente o inválido
+        '403':
+          description: Permiso insuficiente
+      security:
+      - BearerAuth: []
+    get:
+      tags:
+      - Empleados
+      summary: Consultar empleado
+      operationId: obtener_empleados__id__get
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Empleados_Empleado'
+        '404':
+          description: Recurso no encontrado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Empleados_Error'
+        '500':
+          description: Error interno de persistencia
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Empleados_Error'
+        '503':
+          description: Base de datos no disponible
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Empleados_Error'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Empleados_HTTPValidationError'
+        '401':
+          description: Bearer ausente o inválido
+        '403':
+          description: Permiso insuficiente
+      security:
+      - BearerAuth: []
+  /departamentos:
+    post:
+      tags:
+      - Departamentos
+      summary: Crear departamento
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Departamentos_Departamento'
+      responses:
+        '201':
+          description: Departamento creado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Departamentos_Departamento'
+        '400':
+          description: Datos inválidos o id duplicado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Departamentos_Error'
+        '413':
+          description: Cuerpo demasiado grande
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Departamentos_Error'
+        '500':
+          description: Error interno
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Departamentos_Error'
+        '503':
+          description: Base de datos no disponible
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Departamentos_Error'
+        '401':
+          description: Bearer ausente o inválido
+        '403':
+          description: Permiso insuficiente
+      security:
+      - BearerAuth: []
+    get:
+      tags:
+      - Departamentos
+      summary: Listar departamentos
+      responses:
+        '200':
+          description: Departamentos registrados
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Departamentos_Departamento'
+        '500':
+          description: Error interno
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Departamentos_Error'
+        '503':
+          description: Base de datos no disponible
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Departamentos_Error'
+        '401':
+          description: Bearer ausente o inválido
+        '403':
+          description: Permiso insuficiente
+      security:
+      - BearerAuth: []
+  /departamentos/{id}:
+    get:
+      tags:
+      - Departamentos
+      summary: Consultar departamento
+      responses:
+        '200':
+          description: Departamento encontrado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Departamentos_Departamento'
+        '404':
+          description: Departamento inexistente
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Departamentos_Error'
+        '500':
+          description: Error interno
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Departamentos_Error'
+        '503':
+          description: Base de datos no disponible
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Departamentos_Error'
+        '401':
+          description: Bearer ausente o inválido
+        '403':
+          description: Permiso insuficiente
+      security:
+      - BearerAuth: []
+    put:
+      tags:
+      - Departamentos
+      summary: Actualizar nombre y descripción (el id es inmutable)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Departamentos_DepartamentoActualizacion'
+      responses:
+        '200':
+          description: Departamento actualizado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Departamentos_Departamento'
+        '400':
+          description: Datos inválidos
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Departamentos_Error'
+        '404':
+          description: Departamento inexistente
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Departamentos_Error'
+        '500':
+          description: Error interno
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Departamentos_Error'
+        '503':
+          description: Base de datos no disponible
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Departamentos_Error'
+        '401':
+          description: Bearer ausente o inválido
+        '403':
+          description: Permiso insuficiente
+      security:
+      - BearerAuth: []
+    delete:
+      tags:
+      - Departamentos
+      summary: Eliminar departamento
+      responses:
+        '204':
+          description: Departamento eliminado
+        '404':
+          description: Departamento inexistente
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Departamentos_Error'
+        '500':
+          description: Error interno
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Departamentos_Error'
+        '503':
+          description: Base de datos no disponible
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Departamentos_Error'
+        '401':
+          description: Bearer ausente o inválido
+        '403':
+          description: Permiso insuficiente
+      security:
+      - BearerAuth: []
+  /perfiles:
+    get:
+      tags:
+      - Perfiles
+      summary: Listar perfiles
+      responses:
+        '200':
+          description: Perfiles registrados
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Perfiles_Perfil'
+        '401':
+          description: Token ausente o inválido
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Perfiles_Error'
+        '503':
+          description: Base de datos no disponible
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Perfiles_Error'
+        '403':
+          description: Permiso insuficiente
+      security:
+      - BearerAuth: []
+  /perfiles/{empleadoId}:
+    get:
+      tags:
+      - Perfiles
+      summary: Obtener el perfil de un empleado
+      parameters:
+      - in: path
+        name: empleadoId
+        required: true
+        schema:
+          type: string
+        description: Identificador del empleado dueño del perfil
+      responses:
+        '200':
+          description: Perfil encontrado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Perfiles_Perfil'
+        '401':
+          description: Token ausente o inválido
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Perfiles_Error'
+        '404':
+          description: Perfil no encontrado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Perfiles_Error'
+        '503':
+          description: Base de datos no disponible
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Perfiles_Error'
+        '403':
+          description: Permiso insuficiente
+      security:
+      - BearerAuth: []
+    put:
+      tags:
+      - Perfiles
+      summary: Actualizar el perfil propio
+      parameters:
+      - in: path
+        name: empleadoId
+        required: true
+        schema:
+          type: string
+        description: Identificador del empleado dueño del perfil
+      description: Solo se aceptan los campos editables por el empleado; los datos laborales se sincronizan desde
+        Empleados.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Perfiles_PerfilUpdate'
+      responses:
+        '200':
+          description: Perfil actualizado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Perfiles_Perfil'
+        '400':
+          description: JSON inválido, campo protegido o desconocido
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Perfiles_Error'
+        '401':
+          description: Token ausente o inválido
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Perfiles_Error'
+        '403':
+          description: El perfil pertenece a otro empleado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Perfiles_Error'
+        '404':
+          description: Perfil no encontrado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Perfiles_Error'
+        '503':
+          description: Base de datos no disponible
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Perfiles_Error'
+      security:
+      - BearerAuth: []
+  /notificaciones:
+    get:
+      tags:
+      - Notificaciones
+      summary: Listar el historial completo
+      operationId: all
+      responses:
+        '200':
+          description: OK
+          content:
+            '*/*':
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Notificaciones_Notificacion'
+        '401':
+          description: Bearer ausente o inválido
+        '403':
+          description: Permiso insuficiente
+      security:
+      - BearerAuth: []
+  /notificaciones/{empleadoId}:
+    get:
+      tags:
+      - Notificaciones
+      summary: Listar notificaciones de un empleado
+      operationId: byEmpleado
+      parameters:
+      - name: empleadoId
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: OK
+          content:
+            '*/*':
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Notificaciones_Notificacion'
+        '401':
+          description: Bearer ausente o inválido
+        '403':
+          description: Permiso insuficiente
+      security:
+      - BearerAuth: []
+  /notificaciones/seguridad/{id}/token:
+    get:
+      tags:
+      - Notificaciones
+      summary: Consultar token de entrega simulado (solo ADMIN, mientras esté vigente)
+      operationId: deliveryToken
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: X-Authenticated-Role
+        in: header
+        required: false
+        schema:
+          type: string
+      responses:
+        '200':
+          description: OK
+          content:
+            '*/*':
+              schema:
+                type: object
+                additionalProperties:
+                  type: string
+        '401':
+          description: Bearer ausente o inválido
+        '403':
+          description: Permiso insuficiente
+      security:
+      - BearerAuth: []
+  /vacaciones:
+    post:
+      tags:
+      - Vacaciones
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Vacaciones_VacacionRequest'
+        required: true
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Vacaciones_Vacacion'
+        '400':
+          description: Bad Request
+        '401':
+          description: Bearer ausente o inválido
+        '403':
+          description: Permiso insuficiente
+      security:
+      - BearerAuth: []
+    get:
+      tags:
+      - Vacaciones
+      parameters:
+      - name: empleadoId
+        in: query
+        schema:
+          type: string
+      responses:
+        '200':
+          description: OK
+        '401':
+          description: Bearer ausente o inválido
+        '403':
+          description: Permiso insuficiente
+      security:
+      - BearerAuth: []
+  /vacaciones/{id}:
+    get:
+      tags:
+      - Vacaciones
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Vacaciones_Vacacion'
+        '404':
+          description: Not Found
+        '401':
+          description: Bearer ausente o inválido
+        '403':
+          description: Permiso insuficiente
+      security:
+      - BearerAuth: []
+    delete:
+      tags:
+      - Vacaciones
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Vacaciones_Vacacion'
+        '400':
+          description: Bad Request
+        '404':
+          description: Not Found
+        '401':
+          description: Bearer ausente o inválido
+        '403':
+          description: Permiso insuficiente
+      security:
+      - BearerAuth: []
 components:
   schemas:
     HTTPValidationError:
@@ -1058,8 +1083,489 @@ components:
       - msg
       - type
       title: ValidationError
+    Auth_ChangeRequest:
+      properties:
+        currentPassword:
+          type: string
+          title: Currentpassword
+        newPassword:
+          type: string
+          title: Newpassword
+      additionalProperties: false
+      type: object
+      required:
+      - currentPassword
+      - newPassword
+      title: ChangeRequest
+    Auth_HTTPValidationError:
+      properties:
+        detail:
+          items:
+            $ref: '#/components/schemas/Auth_ValidationError'
+          type: array
+          title: Detail
+      type: object
+      title: HTTPValidationError
+    Auth_LoginRequest:
+      properties:
+        email:
+          type: string
+          title: Email
+        password:
+          type: string
+          title: Password
+      additionalProperties: false
+      type: object
+      required:
+      - email
+      - password
+      title: LoginRequest
+    Auth_RecoverRequest:
+      properties:
+        email:
+          type: string
+          title: Email
+      additionalProperties: false
+      type: object
+      required:
+      - email
+      title: RecoverRequest
+    Auth_ResetRequest:
+      properties:
+        token:
+          type: string
+          title: Token
+        newPassword:
+          type: string
+          title: Newpassword
+      additionalProperties: false
+      type: object
+      required:
+      - token
+      - newPassword
+      title: ResetRequest
+    Auth_ValidationError:
+      properties:
+        loc:
+          items:
+            anyOf:
+            - type: string
+            - type: integer
+          type: array
+          title: Location
+        msg:
+          type: string
+          title: Message
+        type:
+          type: string
+          title: Error Type
+      type: object
+      required:
+      - loc
+      - msg
+      - type
+      title: ValidationError
+    Empleados_Empleado:
+      properties:
+        id:
+          type: string
+          minLength: 1
+          title: Id
+          description: Identificador único del empleado
+          examples:
+          - E001
+        nombre:
+          type: string
+          minLength: 1
+          title: Nombre
+          description: Nombre del empleado
+          examples:
+          - Juan
+        apellido:
+          type: string
+          minLength: 1
+          title: Apellido
+          description: Apellido del empleado
+          examples:
+          - Pérez
+        email:
+          type: string
+          minLength: 3
+          title: Email
+          description: Correo electrónico corporativo
+          examples:
+          - juan.perez@empresa.com
+        numeroEmpleado:
+          type: string
+          minLength: 1
+          title: Numeroempleado
+          description: Número único asignado al empleado
+          examples:
+          - EMP-2026-001
+        cargo:
+          type: string
+          minLength: 1
+          title: Cargo
+          description: Cargo actual del empleado
+          examples:
+          - Desarrollador Senior
+        area:
+          type: string
+          minLength: 1
+          title: Area
+          description: Área organizacional
+          examples:
+          - Tecnología
+        departamentoId:
+          type: string
+          minLength: 1
+          title: Departamentoid
+          description: Identificador textual del departamento
+          examples:
+          - IT
+        fechaIngreso:
+          type: string
+          format: date
+          title: Fechaingreso
+          description: Fecha de ingreso del empleado
+          examples:
+          - '2026-02-10'
+        estado:
+          type: string
+          enum:
+          - ACTIVO
+          - EN_VACACIONES
+          - RETIRADO
+          - PENDIENTE
+          - RECHAZADO
+          title: Estado
+          description: Estado actual del empleado. ACTIVO, EN_VACACIONES y RETIRADO son el ciclo de vida; PENDIENTE
+            y RECHAZADO solo existen mientras se valida el departamento (fallback del Circuit Breaker)
+          default: ACTIVO
+          examples:
+          - ACTIVO
+          - EN_VACACIONES
+          - RETIRADO
+        fechaRetiro:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Fecharetiro
+          description: Instante UTC de la baja logica; solo existe para empleados RETIRADO
+      type: object
+      required:
+      - id
+      - nombre
+      - apellido
+      - email
+      - numeroEmpleado
+      - cargo
+      - area
+      - departamentoId
+      - fechaIngreso
+      title: Empleado
+      examples:
+      - apellido: Pérez
+        area: Tecnología
+        cargo: Desarrollador Senior
+        departamentoId: IT
+        email: juan.perez@empresa.com
+        estado: ACTIVO
+        fechaIngreso: '2026-02-10'
+        id: E001
+        nombre: Juan
+        numeroEmpleado: EMP-2026-001
+    Empleados_EmpleadoActualizacion:
+      properties:
+        nombre:
+          type: string
+          minLength: 1
+          title: Nombre
+        apellido:
+          type: string
+          minLength: 1
+          title: Apellido
+        email:
+          type: string
+          minLength: 3
+          title: Email
+        numeroEmpleado:
+          type: string
+          minLength: 1
+          title: Numeroempleado
+        cargo:
+          type: string
+          minLength: 1
+          title: Cargo
+        area:
+          type: string
+          minLength: 1
+          title: Area
+        departamentoId:
+          type: string
+          minLength: 1
+          title: Departamentoid
+        fechaIngreso:
+          type: string
+          format: date
+          title: Fechaingreso
+      additionalProperties: false
+      type: object
+      required:
+      - nombre
+      - apellido
+      - email
+      - numeroEmpleado
+      - cargo
+      - area
+      - departamentoId
+      - fechaIngreso
+      title: EmpleadoActualizacion
+      description: Campos de negocio editables; id, estado y fechaRetiro quedan protegidos.
+    Empleados_Error:
+      properties:
+        detail:
+          type: string
+          title: Detail
+      type: object
+      required:
+      - detail
+      title: Error
+    Empleados_HTTPValidationError:
+      properties:
+        detail:
+          items:
+            $ref: '#/components/schemas/Empleados_ValidationError'
+          type: array
+          title: Detail
+      type: object
+      title: HTTPValidationError
+    Empleados_ValidationError:
+      properties:
+        loc:
+          items:
+            anyOf:
+            - type: string
+            - type: integer
+          type: array
+          title: Location
+        msg:
+          type: string
+          title: Message
+        type:
+          type: string
+          title: Error Type
+      type: object
+      required:
+      - loc
+      - msg
+      - type
+      title: ValidationError
+    Departamentos_Departamento:
+      type: object
+      required:
+      - id
+      - nombre
+      - descripcion
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+          minLength: 1
+          description: Identificador único
+          example: IT
+        nombre:
+          type: string
+          minLength: 1
+          description: Nombre del departamento
+          example: Tecnología
+        descripcion:
+          type: string
+          minLength: 1
+          description: Descripción del departamento
+          example: Departamento de TI
+    Departamentos_DepartamentoActualizacion:
+      type: object
+      required:
+      - nombre
+      - descripcion
+      additionalProperties: false
+      properties:
+        nombre:
+          type: string
+          minLength: 1
+          example: Tecnología
+        descripcion:
+          type: string
+          minLength: 1
+          example: Departamento de TI y plataformas
+    Departamentos_Error:
+      type: object
+      required:
+      - detail
+      properties:
+        detail:
+          type: string
+    Departamentos_Salud:
+      type: object
+      required:
+      - status
+      - service
+      - checks
+      properties:
+        status:
+          type: string
+          enum:
+          - UP
+          - DOWN
+        service:
+          type: string
+        checks:
+          type: object
+          additionalProperties:
+            type: string
+            enum:
+            - UP
+            - DOWN
+    Perfiles_Perfil:
+      type: object
+      properties:
+        id:
+          type: string
+        empleadoId:
+          type: string
+          example: E001
+        nombre:
+          type: string
+        apellido:
+          type: string
+        email:
+          type: string
+          format: email
+        cargo:
+          type: string
+        area:
+          type: string
+        departamentoId:
+          type: string
+        telefono:
+          type: string
+        direccion:
+          type: string
+        ciudad:
+          type: string
+        biografia:
+          type: string
+        fechaCreacion:
+          type: string
+          format: date-time
+        archivado:
+          type: boolean
+          description: true cuando el empleado fue retirado
+    Perfiles_PerfilUpdate:
+      type: object
+      additionalProperties: false
+      properties:
+        telefono:
+          type: string
+          example: '3001234567'
+        direccion:
+          type: string
+          example: 'Calle 10 # 5-20'
+        ciudad:
+          type: string
+          example: Armenia
+        biografia:
+          type: string
+          example: Ingeniera de plataforma
+    Perfiles_Error:
+      type: object
+      required:
+      - detail
+      properties:
+        detail:
+          type: string
+    Perfiles_Salud:
+      type: object
+      required:
+      - status
+      - service
+      - checks
+      properties:
+        status:
+          type: string
+          enum:
+          - UP
+          - DOWN
+        service:
+          type: string
+        checks:
+          type: object
+          additionalProperties:
+            type: string
+            enum:
+            - UP
+            - DOWN
+    Notificaciones_Notificacion:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        tipo:
+          type: string
+        destinatario:
+          type: string
+        mensaje:
+          type: string
+        fechaEnvio:
+          type: string
+          format: date-time
+        empleadoId:
+          type: string
+    Vacaciones_Vacacion:
+      type: object
+      properties:
+        id:
+          type: string
+          nullable: true
+        empleadoId:
+          type: string
+          nullable: true
+        fechaInicio:
+          type: string
+          format: date
+        fechaFin:
+          type: string
+          format: date
+        estado:
+          type: string
+          nullable: true
+        fechaCreacion:
+          type: string
+          format: date-time
+      additionalProperties: false
+    Vacaciones_VacacionRequest:
+      type: object
+      properties:
+        id:
+          type: string
+          nullable: true
+        empleadoId:
+          type: string
+          nullable: true
+        fechaInicio:
+          type: string
+          format: date
+        fechaFin:
+          type: string
+          format: date
+      additionalProperties: false
   securitySchemes:
     BearerAuth:
       type: http
       scheme: bearer
       bearerFormat: JWT
+servers:
+- url: /

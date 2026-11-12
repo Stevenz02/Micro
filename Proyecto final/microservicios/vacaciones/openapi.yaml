@@ -1,0 +1,136 @@
+openapi: 3.0.1
+info:
+  title: Vacaciones
+  version: '1.0'
+paths:
+  /health:
+    get:
+      tags:
+      - Vacaciones
+      responses:
+        '200':
+          description: OK
+  /vacaciones:
+    post:
+      tags:
+      - Vacaciones
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/VacacionRequest'
+        required: true
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Vacacion'
+        '400':
+          description: Bad Request
+      security:
+      - BearerAuth: []
+    get:
+      tags:
+      - Vacaciones
+      parameters:
+      - name: empleadoId
+        in: query
+        schema:
+          type: string
+      responses:
+        '200':
+          description: OK
+      security:
+      - BearerAuth: []
+  /vacaciones/{id}:
+    get:
+      tags:
+      - Vacaciones
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Vacacion'
+        '404':
+          description: Not Found
+      security:
+      - BearerAuth: []
+    delete:
+      tags:
+      - Vacaciones
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Vacacion'
+        '400':
+          description: Bad Request
+        '404':
+          description: Not Found
+      security:
+      - BearerAuth: []
+components:
+  schemas:
+    Vacacion:
+      type: object
+      properties:
+        id:
+          type: string
+          nullable: true
+        empleadoId:
+          type: string
+          nullable: true
+        fechaInicio:
+          type: string
+          format: date
+        fechaFin:
+          type: string
+          format: date
+        estado:
+          type: string
+          nullable: true
+        fechaCreacion:
+          type: string
+          format: date-time
+      additionalProperties: false
+    VacacionRequest:
+      type: object
+      properties:
+        id:
+          type: string
+          nullable: true
+        empleadoId:
+          type: string
+          nullable: true
+        fechaInicio:
+          type: string
+          format: date
+        fechaFin:
+          type: string
+          format: date
+      additionalProperties: false
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+servers:
+- url: /

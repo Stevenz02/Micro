@@ -101,6 +101,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+      security:
+      - BearerAuth: []
     get:
       tags:
       - Empleados
@@ -167,6 +169,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+      security:
+      - BearerAuth: []
   /empleados/{id}:
     put:
       tags:
@@ -223,6 +227,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+      security:
+      - BearerAuth: []
     delete:
       tags:
       - Empleados
@@ -282,6 +288,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+      security:
+      - BearerAuth: []
     get:
       tags:
       - Empleados
@@ -325,6 +333,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+      security:
+      - BearerAuth: []
 components:
   schemas:
     Empleado:
@@ -524,3 +534,10 @@ components:
       - msg
       - type
       title: ValidationError
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+servers:
+- url: /

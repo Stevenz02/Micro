@@ -43,7 +43,7 @@ pipeline {
               --results-directory vacaciones.tests/reports \
               --logger 'trx;LogFileName=vacaciones.trx'
             # coverlet deja el reporte en una carpeta con GUID: se copia a una ruta estable
-            find vacaciones.tests/reports -mindepth 2 -name coverage.opencover.xml -exec cp {} vacaciones.tests/reports/coverage.opencover.xml \;
+            find vacaciones.tests/reports -mindepth 2 -name coverage.opencover.xml -exec cp {} vacaciones.tests/reports/coverage.opencover.xml ';'
             test -s vacaciones.tests/reports/coverage.opencover.xml
           '''
         }

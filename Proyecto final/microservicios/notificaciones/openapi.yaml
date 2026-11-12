@@ -1,0 +1,115 @@
+openapi: 3.1.0
+info:
+  title: OpenAPI definition
+  version: v0
+servers:
+- url: /
+paths:
+  /notificaciones:
+    get:
+      tags:
+      - notificacion-controller
+      summary: Listar el historial completo
+      operationId: all
+      responses:
+        '200':
+          description: OK
+          content:
+            '*/*':
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Notificacion'
+      security:
+      - BearerAuth: []
+  /notificaciones/{empleadoId}:
+    get:
+      tags:
+      - notificacion-controller
+      summary: Listar notificaciones de un empleado
+      operationId: byEmpleado
+      parameters:
+      - name: empleadoId
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: OK
+          content:
+            '*/*':
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Notificacion'
+      security:
+      - BearerAuth: []
+  /notificaciones/seguridad/{id}/token:
+    get:
+      tags:
+      - notificacion-controller
+      summary: Consultar token de entrega simulado (solo ADMIN, mientras esté vigente)
+      operationId: deliveryToken
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: X-Authenticated-Role
+        in: header
+        required: false
+        schema:
+          type: string
+      responses:
+        '200':
+          description: OK
+          content:
+            '*/*':
+              schema:
+                type: object
+                additionalProperties:
+                  type: string
+      security:
+      - BearerAuth: []
+  /health:
+    get:
+      tags:
+      - health-controller
+      summary: Estado del servicio y de sus dependencias
+      operationId: health
+      responses:
+        '200':
+          description: OK
+          content:
+            '*/*':
+              schema:
+                type: object
+                additionalProperties:
+                  type: object
+components:
+  schemas:
+    Notificacion:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        tipo:
+          type: string
+        destinatario:
+          type: string
+        mensaje:
+          type: string
+        fechaEnvio:
+          type: string
+          format: date-time
+        empleadoId:
+          type: string
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT

@@ -34,12 +34,14 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
+      security:
+      - BearerAuth: []
   /perfiles/{empleadoId}:
     get:
       tags:
       - Perfiles
       summary: Obtener el perfil de un empleado
-      parameters: &id001
+      parameters:
       - in: path
         name: empleadoId
         required: true
@@ -71,11 +73,19 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
+      security:
+      - BearerAuth: []
     put:
       tags:
       - Perfiles
       summary: Actualizar el perfil propio
-      parameters: *id001
+      parameters:
+      - in: path
+        name: empleadoId
+        required: true
+        schema:
+          type: string
+        description: Identificador del empleado dueño del perfil
       description: Solo se aceptan los campos editables por el empleado; los datos laborales se sincronizan desde
         Empleados.
       requestBody:
@@ -121,6 +131,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
+      security:
+      - BearerAuth: []
   /health:
     get:
       tags:
@@ -220,3 +232,8 @@ components:
             enum:
             - UP
             - DOWN
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT

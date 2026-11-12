@@ -73,6 +73,11 @@ components:
             enum:
             - UP
             - DOWN
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
 paths:
   /departamentos:
     post:
@@ -116,6 +121,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
+      security:
+      - BearerAuth: []
     get:
       tags:
       - Departamentos
@@ -141,6 +148,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
+      security:
+      - BearerAuth: []
   /departamentos/{id}:
     parameters:
     - name: id
@@ -178,6 +187,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
+      security:
+      - BearerAuth: []
     put:
       tags:
       - Departamentos
@@ -219,6 +230,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
+      security:
+      - BearerAuth: []
     delete:
       tags:
       - Departamentos
@@ -244,6 +257,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
+      security:
+      - BearerAuth: []
   /health:
     get:
       tags:
