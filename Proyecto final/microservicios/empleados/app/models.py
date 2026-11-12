@@ -9,10 +9,12 @@ from .base_models import EMPLEADO_EJEMPLO, Empleado as EmpleadoOriginal
 
 
 class Empleado(EmpleadoOriginal):
-    estado: Literal["ACTIVO", "PENDIENTE", "RECHAZADO", "RETIRADO"] = Field(
+    estado: Literal["ACTIVO", "EN_VACACIONES", "RETIRADO", "PENDIENTE", "RECHAZADO"] = Field(
         default="ACTIVO",
-        description="Estado actual del empleado",
-        examples=["ACTIVO", "PENDIENTE", "RECHAZADO", "RETIRADO"],
+        description=("Estado actual del empleado. ACTIVO, EN_VACACIONES y RETIRADO son el ciclo de vida; "
+                     "PENDIENTE y RECHAZADO solo existen mientras se valida el departamento (fallback "
+                     "del Circuit Breaker)"),
+        examples=["ACTIVO", "EN_VACACIONES", "RETIRADO"],
     )
     fechaRetiro: datetime | None = Field(
         default=None,

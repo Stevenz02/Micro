@@ -166,3 +166,67 @@ def test_departamentos_docs_use_real_upstream_openapi_path():
         assert client.get("/departamentos/docs").status_code == 200
         schema = client.get("/departamentos/openapi.json").json()
     assert schema["paths"]["/departamentos"]["get"]["security"] == [{"BearerAuth": []}]
+
+
+# ----------------------------------------------------------------- Proyecto final: composición
+def _composicion(perfil_respuesta):
+    def handler(request):
+        if request.url.host == "empleados":
+            if request.url.path == "/empleados/E404":
+                return httpx.Response(404, json={"detail": "El empleado con id E404 no existe"})
+            assert request.headers["x-authenticated-employee-id"] == "E001"
+            return httpx.Response(200, json={"id": "E001", "nombre": "Ana"})
+        return perfil_respuesta(request)
+    return handler
+
+
+def _gateway_composicion(perfil_respuesta):
+    client = httpx.AsyncClient(transport=httpx.MockTransport(_composicion(perfil_respuesta)))
+    app = create_app(Settings("http://empleados", "http://departamentos", 5, perfiles_url="http://perfiles",
+                              auth_url="http://auth", jwt_secret=SECRET), client)
+    return TestClient(app)
+
+
+def test_completo_combina_empleado_y_perfil():
+    with _gateway_composicion(lambda r: httpx.Response(200, json={"empleadoId": "E001", "biografia": "x"})) as client:
+        response = client.get("/empleados/E001/completo", headers=bearer())
+    assert response.status_code == 200
+    assert response.json() == {"empleado": {"id": "E001", "nombre": "Ana"},
+                               "perfil": {"empleadoId": "E001", "biografia": "x"}, "parcial": False}
+
+
+def test_completo_tolera_la_caida_de_perfiles():
+    def caido(request):
+        raise httpx.ConnectError("perfiles caido")
+    for respuesta in (caido, lambda r: httpx.Response(503, json={})):
+        with _gateway_composicion(respuesta) as client:
+            body = client.get("/empleados/E001/completo", headers=bearer()).json()
+        assert body["empleado"]["id"] == "E001" and body["perfil"] is None and body["parcial"] is True
+
+
+def test_completo_perfil_aun_no_creado_no_es_fallo():
+    with _gateway_composicion(lambda r: httpx.Response(404, json={})) as client:
+        body = client.get("/empleados/E001/completo", headers=bearer()).json()
+    assert body == {"empleado": {"id": "E001", "nombre": "Ana"}, "perfil": None, "parcial": False}
+
+
+def test_completo_propaga_404_y_exige_token():
+    with _gateway_composicion(lambda r: httpx.Response(200, json={})) as client:
+        assert client.get("/empleados/E404/completo", headers=bearer()).status_code == 404
+        assert client.get("/empleados/E001/completo").status_code == 401
+
+
+def test_completo_sin_empleados_devuelve_503():
+    def handler(request):
+        raise httpx.ConnectError("caido")
+    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    app = create_app(Settings("http://empleados", "http://departamentos", 5, auth_url="http://auth",
+                              jwt_secret=SECRET), client)
+    with TestClient(app) as test_client:
+        response = test_client.get("/empleados/E001/completo", headers=bearer())
+    assert response.status_code == 503 and response.json()["service"] == "empleados-service"
+
+
+def test_swagger_alias_es_publico():
+    with gateway(lambda request: httpx.Response(200, json={})) as client:
+        assert client.get("/swagger").status_code == 200

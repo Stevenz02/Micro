@@ -14,13 +14,20 @@ scrape_configs:
 
   - job_name: 'empleados-service'         # Python / FastAPI · prometheus-fastapi-instrumentator
     metrics_path: '/metrics'
-    static_configs:
-      - targets: ['empleados-service:8081']
+    # Servicio replicado: el DNS de Docker devuelve una IP por réplica
+    dns_sd_configs:
+      - names: ['empleados-service']
+        type: A
+        port: 8081
+        refresh_interval: 15s
 
   - job_name: 'departamentos-service'     # Node.js / Express · prom-client
     metrics_path: '/metrics'
-    static_configs:
-      - targets: ['departamentos-service:8082']
+    dns_sd_configs:
+      - names: ['departamentos-service']
+        type: A
+        port: 8082
+        refresh_interval: 15s
 
   - job_name: 'perfiles-service'          # Go · prometheus/client_golang
     metrics_path: '/metrics'
@@ -36,6 +43,11 @@ scrape_configs:
     metrics_path: '/metrics'
     static_configs:
       - targets: ['vacaciones-service:8085']
+
+  - job_name: 'load-balancer'             # Traefik · peticiones por servicio y réplicas sanas
+    metrics_path: '/metrics'
+    static_configs:
+      - targets: ['load-balancer:8080']
 
   - job_name: 'auth-service'              # Python / FastAPI · prometheus-fastapi-instrumentator
     metrics_path: '/metrics'

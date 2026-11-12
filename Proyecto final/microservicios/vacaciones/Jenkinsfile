@@ -1,0 +1,95 @@
+// Pipeline de CI de Vacaciones (.NET 8): build -> test (cobertura >= 70 %) -> quality (SonarQube) -> package.
+// Jenkins lo registra con JCasC (infra/jenkins/casc.yaml) leyendo este archivo.
+pipeline {
+  agent any
+  options { timestamps(); disableConcurrentBuilds() }
+  environment {
+    SONARQUBE_ENV = 'sonarqube-proyecto-final'
+  }
+  stages {
+    stage('Checkout') {
+      steps {
+        // El proyecto esta montado en /proyecto (solo lectura). Se copia al workspace sin
+        // secretos ni artefactos locales: el pipeline nunca ve .env ni secrets/.
+        sh '''
+          set -eu
+          find . -mindepth 1 -maxdepth 1 -exec rm -rf {} +
+          tar -C /proyecto --exclude=./secrets --exclude=./.env --exclude=./.git \
+              --exclude=node_modules --exclude=target --exclude=bin --exclude=obj \
+              --exclude=__pycache__ --exclude=reports --exclude=.ci -cf - . | tar -xf -
+        '''
+      }
+    }
+    stage('Build') {
+      steps {
+        dir('microservicios') {
+          sh '''
+            set -eu
+            dotnet restore vacaciones.tests/Vacaciones.Tests.csproj
+            dotnet build vacaciones.tests/Vacaciones.Tests.csproj --configuration Release --no-restore
+          '''
+        }
+      }
+    }
+    stage('Test') {
+      steps {
+        dir('microservicios') {
+          sh '''
+            set -eu
+            rm -rf vacaciones.tests/reports && mkdir -p vacaciones.tests/reports
+            dotnet test vacaciones.tests/Vacaciones.Tests.csproj --configuration Release --no-build \
+              --settings vacaciones.tests/coverage.runsettings \
+              --collect:'XPlat Code Coverage' \
+              --results-directory vacaciones.tests/reports \
+              --logger 'trx;LogFileName=vacaciones.trx'
+            # coverlet deja el reporte en una carpeta con GUID: se copia a una ruta estable
+            find vacaciones.tests/reports -mindepth 2 -name coverage.opencover.xml -exec cp {} vacaciones.tests/reports/coverage.opencover.xml \;
+            test -s vacaciones.tests/reports/coverage.opencover.xml
+          '''
+        }
+      }
+    }
+    stage('Quality') {
+      steps {
+        dir('microservicios') {
+          withSonarQubeEnv(env.SONARQUBE_ENV) {
+            sh '''
+              set -eu
+              dotnet sonarscanner begin \
+                /k:"uq-proyecto-final-vacaciones" \
+                /n:"Proyecto final - Vacaciones" \
+                /d:sonar.host.url="$SONAR_HOST_URL" \
+                /d:sonar.token="$SONAR_AUTH_TOKEN" \
+                /d:sonar.inclusions="**/vacaciones/**" \
+                /d:sonar.coverage.exclusions="**/vacaciones/Program.cs,**/vacaciones/EmployeeEventsConsumer.cs,**/vacaciones/RabbitPublisher.cs,**/vacaciones/Observability.cs" \
+                /d:sonar.cs.opencover.reportsPaths="vacaciones.tests/reports/coverage.opencover.xml" \
+                /d:sonar.cs.vstest.reportsPaths="vacaciones.tests/reports/vacaciones.trx"
+              dotnet build vacaciones.tests/Vacaciones.Tests.csproj --configuration Release --no-restore
+              dotnet sonarscanner end /d:sonar.token="$SONAR_AUTH_TOKEN"
+            '''
+          }
+        }
+        // Quality Gate "Cobertura 70": si la cobertura cae por debajo del 70 % el pipeline falla
+        timeout(time: 10, unit: 'MINUTES') { waitForQualityGate abortPipeline: true }
+      }
+    }
+    stage('Package') {
+      steps {
+        sh '''
+          set -eu
+          IMAGE="$REGISTRY_PUSH_HOST/rrhh/vacaciones"
+          docker build -t "$IMAGE:$BUILD_NUMBER" -t "$IMAGE:latest" -f microservicios/vacaciones/Dockerfile microservicios/vacaciones
+          docker push "$IMAGE:$BUILD_NUMBER"
+          docker push "$IMAGE:latest"
+          echo "Imagen publicada: $IMAGE:$BUILD_NUMBER"
+        '''
+      }
+    }
+  }
+  post {
+    always {
+      mstest testResultsFile: 'microservicios/vacaciones.tests/reports/vacaciones.trx', keepLongStdio: true, failOnError: false
+      archiveArtifacts artifacts: 'microservicios/vacaciones.tests/reports/*.xml,microservicios/vacaciones.tests/reports/*.trx', allowEmptyArchive: true
+    }
+  }
+}

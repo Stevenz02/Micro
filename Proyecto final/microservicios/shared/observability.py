@@ -116,6 +116,17 @@ def _install_chaos(app) -> None:
         return await call_next(request)
 
 
+def add_instance_header(app) -> None:
+    """Servicios replicados: cada respuesta indica qué instancia la atendió (demo del balanceo)."""
+    instance = socket.gethostname()
+
+    @app.middleware("http")
+    async def instance_header(request, call_next):
+        response = await call_next(request)
+        response.headers["X-Instance-Id"] = instance
+        return response
+
+
 def tracer():
     return trace.get_tracer(SERVICE_NAME)
 

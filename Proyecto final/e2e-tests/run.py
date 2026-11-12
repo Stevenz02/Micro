@@ -68,7 +68,7 @@ def render_html(features):
             )
         cards.append(f'<section><h2>{html.escape(feature.get("name", ""))}</h2>{"".join(scenario_cards)}</section>')
     page = f"""<!doctype html><html lang="es"><head><meta charset="utf-8">
-<title>Reto 6 · Reporte BDD</title><style>
+<title>Proyecto final · Reporte BDD</title><style>
 body{{font:16px system-ui,sans-serif;background:#f5f7fb;color:#1d2939;max-width:1100px;margin:40px auto;padding:0 20px}}
 h1{{margin-bottom:4px}}p{{color:#475467}}section{{margin:32px 0}}article{{background:white;border:1px solid #d0d5dd;
 border-left:6px solid #98a2b3;border-radius:8px;margin:12px 0;padding:8px 20px}}
@@ -76,7 +76,7 @@ article.passed{{border-left-color:#12b76a}}article.failed{{border-left-color:#f0
 small{{font-size:.82rem;color:#475467;font-weight:normal}}ol{{list-style:none;padding:0}}li{{padding:8px;border-top:1px solid #eaecf0;
 display:flex;flex-wrap:wrap;justify-content:space-between;gap:8px}}li.failed{{color:#b42318}}li.passed{{color:#027a48}}
 pre{{flex-basis:100%;white-space:pre-wrap;background:#fff3f1;color:#912018;padding:12px;overflow:auto}}
-</style></head><body><h1>Reto 6 · Pruebas BDD</h1><p>{len(features)} características · {scenario_count} escenarios · {step_count} pasos</p>
+</style></head><body><h1>Proyecto final · Pruebas BDD</h1><p>{len(features)} características · {scenario_count} escenarios · {step_count} pasos</p>
 {"".join(cards)}</body></html>"""
     (REPORTS / "cucumber.html").write_text(page, encoding="utf-8")
 

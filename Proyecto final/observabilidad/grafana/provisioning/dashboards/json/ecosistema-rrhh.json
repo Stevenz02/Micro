@@ -1,6 +1,6 @@
 {
   "uid": "ecosistema-rrhh",
-  "title": "Reto 8 - Ecosistema RRHH (Observabilidad)",
+  "title": "Proyecto final - Ecosistema RRHH (Observabilidad)",
   "tags": [
     "reto8",
     "microservicios"
@@ -37,7 +37,7 @@
     {
       "type": "stat",
       "title": "Estado de cada servicio",
-      "description": "up{job=...}: 1 si Prometheus pudo raspar el servicio, 0 si está caído.",
+      "description": "1 si Prometheus pudo raspar al menos una instancia del servicio, 0 si todas están caídas.",
       "id": 2,
       "datasource": {
         "type": "prometheus",
@@ -55,7 +55,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "up",
+          "expr": "max by (job) (up)",
           "refId": "A",
           "legendFormat": "{{job}}",
           "instant": true
@@ -138,7 +138,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "count(up == 0) or vector(0)",
+          "expr": "count(max by (job) (up) == 0) or vector(0)",
           "refId": "A",
           "legendFormat": "caídos",
           "instant": true
@@ -387,6 +387,405 @@
     },
     {
       "type": "row",
+      "title": "Métricas de negocio",
+      "id": 30,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 10
+      },
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "type": "stat",
+      "title": "Empleados creados",
+      "description": "Altas confirmadas (empleados_creados_total), sumadas entre réplicas, desde el último arranque.",
+      "id": 31,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 0,
+        "y": 11
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "sum(empleados_creados_total) or vector(0)",
+          "refId": "A",
+          "legendFormat": "",
+          "instant": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "decimals": 0,
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "green"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "orientation": "auto",
+        "textMode": "value",
+        "wideLayout": true,
+        "showPercentChange": false
+      }
+    },
+    {
+      "type": "stat",
+      "title": "Empleados retirados",
+      "description": "Bajas lógicas (empleados_retirados_total) desde el último arranque.",
+      "id": 32,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 6,
+        "y": 11
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "sum(empleados_retirados_total) or vector(0)",
+          "refId": "A",
+          "legendFormat": "",
+          "instant": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "decimals": 0,
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "orange"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "orange",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "orientation": "auto",
+        "textMode": "value",
+        "wideLayout": true,
+        "showPercentChange": false
+      }
+    },
+    {
+      "type": "stat",
+      "title": "Notificaciones enviadas",
+      "description": "Notificaciones registradas por el servicio de Notificaciones (notificaciones_enviadas_total).",
+      "id": 33,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 12,
+        "y": 11
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "sum(notificaciones_enviadas_total) or vector(0)",
+          "refId": "A",
+          "legendFormat": "",
+          "instant": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "decimals": 0,
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "blue"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "orientation": "auto",
+        "textMode": "value",
+        "wideLayout": true,
+        "showPercentChange": false
+      }
+    },
+    {
+      "type": "stat",
+      "title": "Réplicas sanas (balanceadas)",
+      "description": "Instancias UP de los servicios que escalan horizontalmente detrás del balanceador.",
+      "id": 34,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 18,
+        "y": 11
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "sum by (job) (up{job=~\"empleados-service|departamentos-service\"})",
+          "refId": "A",
+          "legendFormat": "{{job}}",
+          "instant": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "decimals": 0,
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "purple"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "purple",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "orientation": "auto",
+        "textMode": "value_and_name",
+        "wideLayout": true,
+        "showPercentChange": false
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Notificaciones por tipo (últimos 5 min)",
+      "description": "increase() de notificaciones_enviadas_total por tipo y resultado del correo SMTP.",
+      "id": 35,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 15
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "sum by (tipo, correo) (increase(notificaciones_enviadas_total[5m]))",
+          "refId": "A",
+          "legendFormat": "{{tipo}} · {{correo}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "min": 0,
+          "custom": {
+            "drawStyle": "bars",
+            "fillOpacity": 60,
+            "lineWidth": 1,
+            "stacking": {
+              "mode": "normal",
+              "group": "A"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "sum"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Errores de negocio (últimos 5 min)",
+      "description": "Inicios de sesión fallidos, altas aplazadas por el Circuit Breaker y eventos que no se pudieron publicar.",
+      "id": 36,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 15
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "sum(increase(auth_logins_total{resultado=\"fallido\"}[5m])) or vector(0)",
+          "refId": "A",
+          "legendFormat": "logins fallidos"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "sum(increase(empleados_pendientes_total[5m])) or vector(0)",
+          "refId": "B",
+          "legendFormat": "altas PENDIENTE (fallback)"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "sum by (tipo) (increase(eventos_publicacion_errores_total[5m]))",
+          "refId": "C",
+          "legendFormat": "evento no publicado: {{tipo}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "min": 0,
+          "custom": {
+            "drawStyle": "bars",
+            "fillOpacity": 60,
+            "lineWidth": 1,
+            "stacking": {
+              "mode": "normal",
+              "group": "A"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "sum"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "type": "row",
       "title": "Comportamiento del Tráfico",
       "id": 7,
       "collapsed": false,
@@ -394,7 +793,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 10
+        "y": 23
       },
       "panels": []
     },
@@ -411,7 +810,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 11
+        "y": 24
       },
       "targets": [
         {
@@ -477,7 +876,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 11
+        "y": 24
       },
       "targets": [
         {
@@ -556,7 +955,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 19
+        "y": 32
       },
       "targets": [
         {
@@ -622,7 +1021,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 19
+        "y": 32
       },
       "targets": [
         {
@@ -684,7 +1083,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 27
+        "y": 40
       },
       "panels": []
     },
@@ -701,7 +1100,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 28
+        "y": 41
       },
       "targets": [
         {
@@ -767,7 +1166,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 28
+        "y": 41
       },
       "targets": [
         {
@@ -829,7 +1228,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 36
+        "y": 49
       },
       "panels": []
     },
@@ -846,7 +1245,7 @@
         "h": 7,
         "w": 24,
         "x": 0,
-        "y": 37
+        "y": 50
       },
       "targets": [
         {
@@ -911,7 +1310,7 @@
         "h": 12,
         "w": 24,
         "x": 0,
-        "y": 44
+        "y": 57
       },
       "targets": [
         {

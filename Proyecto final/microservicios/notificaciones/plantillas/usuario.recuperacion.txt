@@ -1,0 +1,15 @@
+Asunto: Recuperación de contraseña
+
+Hola,
+
+Recibimos una solicitud para restablecer la contraseña de la cuenta {{email}}.
+
+Token de recuperación:
+{{token}}
+
+Vence: {{expiraEn}}
+
+Envíe POST /auth/reset-password con el token y su nueva contraseña.
+Si usted no hizo esta solicitud, ignore este mensaje; su contraseña actual sigue vigente.
+
+Recursos Humanos

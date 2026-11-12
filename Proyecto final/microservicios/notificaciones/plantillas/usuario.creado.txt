@@ -1,0 +1,19 @@
+Asunto: Bienvenido(a): active su cuenta de RR. HH.
+
+Hola,
+
+Se creó su cuenta de acceso al sistema de gestión de empleados para {{email}}.
+La cuenta está inactiva hasta que usted mismo establezca su contraseña.
+
+Token de activación:
+{{token}}
+
+Vence: {{expiraEn}}
+
+Cómo activarla: envíe POST /auth/reset-password con el token y la contraseña que elija:
+{"token": "<token>", "newPassword": "<su contraseña>"}
+
+Por seguridad, el sistema nunca genera ni envía contraseñas. Si usted no esperaba este
+mensaje, ignórelo: sin el token nadie puede activar la cuenta.
+
+Recursos Humanos

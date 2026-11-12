@@ -11,6 +11,16 @@ export class Repository {
   async obtener(id) {
     return (await this.pool.query('SELECT id, nombre, descripcion FROM departamentos WHERE id = $1', [id])).rows[0];
   }
+  async actualizar(id, { nombre, descripcion }) {
+    const result = await this.pool.query(
+      'UPDATE departamentos SET nombre = $2, descripcion = $3 WHERE id = $1 RETURNING id, nombre, descripcion',
+      [id, nombre, descripcion],
+    );
+    return result.rows[0];
+  }
+  async eliminar(id) {
+    return (await this.pool.query('DELETE FROM departamentos WHERE id = $1', [id])).rowCount > 0;
+  }
   async listar() {
     return (await this.pool.query('SELECT id, nombre, descripcion FROM departamentos ORDER BY id')).rows;
   }

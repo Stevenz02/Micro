@@ -1,0 +1,79 @@
+// Pipeline de CI de Departamentos (Node.js/Express): build -> test (cobertura >= 70 %) -> quality (SonarQube) -> package.
+// Jenkins lo registra con JCasC (infra/jenkins/casc.yaml) leyendo este archivo.
+pipeline {
+  agent any
+  options { timestamps(); disableConcurrentBuilds() }
+  environment {
+    SONARQUBE_ENV = 'sonarqube-proyecto-final'
+  }
+  stages {
+    stage('Checkout') {
+      steps {
+        // El proyecto esta montado en /proyecto (solo lectura). Se copia al workspace sin
+        // secretos ni artefactos locales: el pipeline nunca ve .env ni secrets/.
+        sh '''
+          set -eu
+          find . -mindepth 1 -maxdepth 1 -exec rm -rf {} +
+          tar -C /proyecto --exclude=./secrets --exclude=./.env --exclude=./.git \
+              --exclude=node_modules --exclude=target --exclude=bin --exclude=obj \
+              --exclude=__pycache__ --exclude=reports --exclude=.ci -cf - . | tar -xf -
+        '''
+      }
+    }
+    stage('Build') {
+      steps {
+        dir('microservicios/departamentos') {
+          sh '''
+            set -eu
+            npm ci --no-audit --no-fund
+            find src -name '*.js' -type f -print0 | xargs -0 -n1 node --check
+          '''
+        }
+      }
+    }
+    stage('Test') {
+      steps {
+        dir('microservicios/departamentos') {
+          sh '''
+            set -eu
+            mkdir -p coverage
+            node --test --experimental-test-coverage --test-coverage-include='src/**/*.js' \
+              --test-coverage-lines=70 \
+              --test-reporter=spec --test-reporter-destination=stdout \
+              --test-reporter=lcov --test-reporter-destination=coverage/lcov.info
+          '''
+        }
+      }
+    }
+    stage('Quality') {
+      steps {
+        dir('microservicios/departamentos') {
+          withSonarQubeEnv(env.SONARQUBE_ENV) {
+            sh '''
+              sonar-scanner
+            '''
+          }
+        }
+        // Quality Gate "Cobertura 70": si la cobertura cae por debajo del 70 % el pipeline falla
+        timeout(time: 10, unit: 'MINUTES') { waitForQualityGate abortPipeline: true }
+      }
+    }
+    stage('Package') {
+      steps {
+        sh '''
+          set -eu
+          IMAGE="$REGISTRY_PUSH_HOST/rrhh/departamentos"
+          docker build -t "$IMAGE:$BUILD_NUMBER" -t "$IMAGE:latest" -f microservicios/departamentos/Dockerfile microservicios/departamentos
+          docker push "$IMAGE:$BUILD_NUMBER"
+          docker push "$IMAGE:latest"
+          echo "Imagen publicada: $IMAGE:$BUILD_NUMBER"
+        '''
+      }
+    }
+  }
+  post {
+    always {
+      archiveArtifacts artifacts: 'microservicios/departamentos/coverage/lcov.info', allowEmptyArchive: true
+    }
+  }
+}

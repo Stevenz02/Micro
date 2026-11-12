@@ -1,0 +1,1065 @@
+openapi: 3.1.0
+info:
+  title: Proyecto final - API Gateway
+  description: Entrada única con validación HS256, RBAC y propiedad del perfil. Para explorar contratos completos
+    use /auth/docs, /empleados/docs, /departamentos/docs, /perfiles/docs, /notificaciones/docs y /vacaciones/docs.
+    Obtenga access_token en POST /auth/login y péguelo en Authorize.
+  version: 1.0.0
+paths:
+  /health:
+    get:
+      tags:
+      - Salud
+      summary: Health
+      description: 'Reto 8: el Gateway no tiene BD ni broker; su salud depende de alcanzar los upstreams.'
+      operationId: health_health_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+  /health/dependencies:
+    get:
+      tags:
+      - Salud
+      summary: Dependencies
+      operationId: dependencies_health_dependencies_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+      security:
+      - BearerAuth: []
+  /empleados/{empleado_id}/completo:
+    get:
+      tags:
+      - Composición
+      summary: Empleado y perfil en una sola respuesta (API Composition)
+      description: 'Combina Empleados (dato obligatorio) y Perfiles (dato complementario) en paralelo.
+
+
+        Fallo parcial: si Perfiles no responde, se devuelve igualmente el empleado con
+
+        `perfil: null` y `parcial: true`; solo la caída de Empleados produce un error.'
+      operationId: empleado_completo_empleados__empleado_id__completo_get
+      parameters:
+      - name: empleado_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Empleado Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '404':
+          description: El empleado no existe
+        '503':
+          description: Empleados no disponible
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+      security:
+      - BearerAuth: []
+  /empleados:
+    get:
+      tags:
+      - Proxy
+      summary: Empleados
+      operationId: empleados_empleados_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+      security:
+      - BearerAuth: []
+    put:
+      tags:
+      - Proxy
+      summary: Empleados
+      operationId: empleados_empleados_put
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+      security:
+      - BearerAuth: []
+    post:
+      tags:
+      - Proxy
+      summary: Empleados
+      operationId: empleados_empleados_post
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+      security:
+      - BearerAuth: []
+    delete:
+      tags:
+      - Proxy
+      summary: Empleados
+      operationId: empleados_empleados_delete
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+      security:
+      - BearerAuth: []
+    options:
+      tags:
+      - Proxy
+      summary: Empleados
+      operationId: empleados_empleados_options
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+      security:
+      - BearerAuth: []
+    patch:
+      tags:
+      - Proxy
+      summary: Empleados
+      operationId: empleados_empleados_patch
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+      security:
+      - BearerAuth: []
+  /empleados/{path}:
+    get:
+      tags:
+      - Proxy
+      summary: Empleados
+      operationId: empleados_empleados__path__get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+      security:
+      - BearerAuth: []
+    put:
+      tags:
+      - Proxy
+      summary: Empleados
+      operationId: empleados_empleados__path__put
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+      security:
+      - BearerAuth: []
+    post:
+      tags:
+      - Proxy
+      summary: Empleados
+      operationId: empleados_empleados__path__post
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+      security:
+      - BearerAuth: []
+    delete:
+      tags:
+      - Proxy
+      summary: Empleados
+      operationId: empleados_empleados__path__delete
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+      security:
+      - BearerAuth: []
+    options:
+      tags:
+      - Proxy
+      summary: Empleados
+      operationId: empleados_empleados__path__options
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+      security:
+      - BearerAuth: []
+    patch:
+      tags:
+      - Proxy
+      summary: Empleados
+      operationId: empleados_empleados__path__patch
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+      security:
+      - BearerAuth: []
+  /departamentos:
+    get:
+      tags:
+      - Proxy
+      summary: Departamentos
+      operationId: departamentos_departamentos_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+      security:
+      - BearerAuth: []
+    put:
+      tags:
+      - Proxy
+      summary: Departamentos
+      operationId: departamentos_departamentos_put
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+      security:
+      - BearerAuth: []
+    post:
+      tags:
+      - Proxy
+      summary: Departamentos
+      operationId: departamentos_departamentos_post
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+      security:
+      - BearerAuth: []
+    delete:
+      tags:
+      - Proxy
+      summary: Departamentos
+      operationId: departamentos_departamentos_delete
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+      security:
+      - BearerAuth: []
+    options:
+      tags:
+      - Proxy
+      summary: Departamentos
+      operationId: departamentos_departamentos_options
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+      security:
+      - BearerAuth: []
+    patch:
+      tags:
+      - Proxy
+      summary: Departamentos
+      operationId: departamentos_departamentos_patch
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+      security:
+      - BearerAuth: []
+  /departamentos/{path}:
+    get:
+      tags:
+      - Proxy
+      summary: Departamentos
+      operationId: departamentos_departamentos__path__get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+      security:
+      - BearerAuth: []
+    put:
+      tags:
+      - Proxy
+      summary: Departamentos
+      operationId: departamentos_departamentos__path__put
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+      security:
+      - BearerAuth: []
+    post:
+      tags:
+      - Proxy
+      summary: Departamentos
+      operationId: departamentos_departamentos__path__post
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+      security:
+      - BearerAuth: []
+    delete:
+      tags:
+      - Proxy
+      summary: Departamentos
+      operationId: departamentos_departamentos__path__delete
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+      security:
+      - BearerAuth: []
+    options:
+      tags:
+      - Proxy
+      summary: Departamentos
+      operationId: departamentos_departamentos__path__options
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+      security:
+      - BearerAuth: []
+    patch:
+      tags:
+      - Proxy
+      summary: Departamentos
+      operationId: departamentos_departamentos__path__patch
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+      security:
+      - BearerAuth: []
+  /perfiles:
+    get:
+      tags:
+      - Proxy
+      summary: Perfiles
+      operationId: perfiles_perfiles_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+      security:
+      - BearerAuth: []
+    put:
+      tags:
+      - Proxy
+      summary: Perfiles
+      operationId: perfiles_perfiles_put
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+      security:
+      - BearerAuth: []
+    post:
+      tags:
+      - Proxy
+      summary: Perfiles
+      operationId: perfiles_perfiles_post
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+      security:
+      - BearerAuth: []
+    delete:
+      tags:
+      - Proxy
+      summary: Perfiles
+      operationId: perfiles_perfiles_delete
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+      security:
+      - BearerAuth: []
+    options:
+      tags:
+      - Proxy
+      summary: Perfiles
+      operationId: perfiles_perfiles_options
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+      security:
+      - BearerAuth: []
+    patch:
+      tags:
+      - Proxy
+      summary: Perfiles
+      operationId: perfiles_perfiles_patch
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+      security:
+      - BearerAuth: []
+  /perfiles/{path}:
+    get:
+      tags:
+      - Proxy
+      summary: Perfiles
+      operationId: perfiles_perfiles__path__get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+      security:
+      - BearerAuth: []
+    put:
+      tags:
+      - Proxy
+      summary: Perfiles
+      operationId: perfiles_perfiles__path__put
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+      security:
+      - BearerAuth: []
+    post:
+      tags:
+      - Proxy
+      summary: Perfiles
+      operationId: perfiles_perfiles__path__post
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+      security:
+      - BearerAuth: []
+    delete:
+      tags:
+      - Proxy
+      summary: Perfiles
+      operationId: perfiles_perfiles__path__delete
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+      security:
+      - BearerAuth: []
+    options:
+      tags:
+      - Proxy
+      summary: Perfiles
+      operationId: perfiles_perfiles__path__options
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+      security:
+      - BearerAuth: []
+    patch:
+      tags:
+      - Proxy
+      summary: Perfiles
+      operationId: perfiles_perfiles__path__patch
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+      security:
+      - BearerAuth: []
+  /notificaciones:
+    get:
+      tags:
+      - Proxy
+      summary: Notificaciones
+      operationId: notificaciones_notificaciones_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+      security:
+      - BearerAuth: []
+    put:
+      tags:
+      - Proxy
+      summary: Notificaciones
+      operationId: notificaciones_notificaciones_put
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+      security:
+      - BearerAuth: []
+    post:
+      tags:
+      - Proxy
+      summary: Notificaciones
+      operationId: notificaciones_notificaciones_post
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+      security:
+      - BearerAuth: []
+    delete:
+      tags:
+      - Proxy
+      summary: Notificaciones
+      operationId: notificaciones_notificaciones_delete
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+      security:
+      - BearerAuth: []
+    options:
+      tags:
+      - Proxy
+      summary: Notificaciones
+      operationId: notificaciones_notificaciones_options
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+      security:
+      - BearerAuth: []
+    patch:
+      tags:
+      - Proxy
+      summary: Notificaciones
+      operationId: notificaciones_notificaciones_patch
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+      security:
+      - BearerAuth: []
+  /notificaciones/{path}:
+    get:
+      tags:
+      - Proxy
+      summary: Notificaciones
+      operationId: notificaciones_notificaciones__path__get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+      security:
+      - BearerAuth: []
+    put:
+      tags:
+      - Proxy
+      summary: Notificaciones
+      operationId: notificaciones_notificaciones__path__put
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+      security:
+      - BearerAuth: []
+    post:
+      tags:
+      - Proxy
+      summary: Notificaciones
+      operationId: notificaciones_notificaciones__path__post
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+      security:
+      - BearerAuth: []
+    delete:
+      tags:
+      - Proxy
+      summary: Notificaciones
+      operationId: notificaciones_notificaciones__path__delete
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+      security:
+      - BearerAuth: []
+    options:
+      tags:
+      - Proxy
+      summary: Notificaciones
+      operationId: notificaciones_notificaciones__path__options
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+      security:
+      - BearerAuth: []
+    patch:
+      tags:
+      - Proxy
+      summary: Notificaciones
+      operationId: notificaciones_notificaciones__path__patch
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+      security:
+      - BearerAuth: []
+  /vacaciones:
+    get:
+      tags:
+      - Proxy
+      summary: Vacaciones
+      operationId: vacaciones_vacaciones_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+      security:
+      - BearerAuth: []
+    put:
+      tags:
+      - Proxy
+      summary: Vacaciones
+      operationId: vacaciones_vacaciones_put
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+      security:
+      - BearerAuth: []
+    post:
+      tags:
+      - Proxy
+      summary: Vacaciones
+      operationId: vacaciones_vacaciones_post
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+      security:
+      - BearerAuth: []
+    delete:
+      tags:
+      - Proxy
+      summary: Vacaciones
+      operationId: vacaciones_vacaciones_delete
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+      security:
+      - BearerAuth: []
+    options:
+      tags:
+      - Proxy
+      summary: Vacaciones
+      operationId: vacaciones_vacaciones_options
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+      security:
+      - BearerAuth: []
+    patch:
+      tags:
+      - Proxy
+      summary: Vacaciones
+      operationId: vacaciones_vacaciones_patch
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+      security:
+      - BearerAuth: []
+  /vacaciones/{path}:
+    get:
+      tags:
+      - Proxy
+      summary: Vacaciones
+      operationId: vacaciones_vacaciones__path__get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+      security:
+      - BearerAuth: []
+    put:
+      tags:
+      - Proxy
+      summary: Vacaciones
+      operationId: vacaciones_vacaciones__path__put
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+      security:
+      - BearerAuth: []
+    post:
+      tags:
+      - Proxy
+      summary: Vacaciones
+      operationId: vacaciones_vacaciones__path__post
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+      security:
+      - BearerAuth: []
+    delete:
+      tags:
+      - Proxy
+      summary: Vacaciones
+      operationId: vacaciones_vacaciones__path__delete
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+      security:
+      - BearerAuth: []
+    options:
+      tags:
+      - Proxy
+      summary: Vacaciones
+      operationId: vacaciones_vacaciones__path__options
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+      security:
+      - BearerAuth: []
+    patch:
+      tags:
+      - Proxy
+      summary: Vacaciones
+      operationId: vacaciones_vacaciones__path__patch
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+      security:
+      - BearerAuth: []
+  /auth/login:
+    post:
+      tags:
+      - Autenticación
+      summary: Auth Login
+      operationId: auth_login_auth_login_post
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TokenOutput'
+        '401':
+          description: Credenciales inválidas
+        '422':
+          description: Cuerpo inválido
+        '503':
+          description: Auth no disponible
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              additionalProperties: false
+              properties:
+                email:
+                  examples:
+                  - usuario@empresa.com
+                  title: Email
+                  type: string
+                password:
+                  examples:
+                  - ClavePersonal2026
+                  title: Password
+                  type: string
+              required:
+              - email
+              - password
+              title: LoginInput
+              type: object
+  /auth/recover-password:
+    post:
+      tags:
+      - Autenticación
+      summary: Auth Recover
+      operationId: auth_recover_auth_recover_password_post
+      responses:
+        '202':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Cuerpo inválido
+        '503':
+          description: Auth no disponible
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              additionalProperties: false
+              properties:
+                email:
+                  examples:
+                  - usuario@empresa.com
+                  title: Email
+                  type: string
+              required:
+              - email
+              title: RecoverInput
+              type: object
+  /auth/reset-password:
+    post:
+      tags:
+      - Autenticación
+      summary: Auth Reset
+      operationId: auth_reset_auth_reset_password_post
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '400':
+          description: Token o contraseña inválidos
+        '422':
+          description: Cuerpo inválido
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              additionalProperties: false
+              properties:
+                token:
+                  description: Token recibido en la notificación de seguridad
+                  title: Token
+                  type: string
+                newPassword:
+                  description: Contraseña nueva según la política de Auth
+                  title: Newpassword
+                  type: string
+              required:
+              - token
+              - newPassword
+              title: ResetInput
+              type: object
+  /auth/change-password:
+    post:
+      tags:
+      - Autenticación
+      summary: Auth Change
+      operationId: auth_change_auth_change_password_post
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '400':
+          description: Contraseña actual incorrecta o nueva inválida
+        '401':
+          description: Token inválido o cuenta no disponible
+        '409':
+          description: La cuenta cambió durante la operación
+        '422':
+          description: Cuerpo inválido
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              additionalProperties: false
+              properties:
+                currentPassword:
+                  title: Currentpassword
+                  type: string
+                newPassword:
+                  title: Newpassword
+                  type: string
+              required:
+              - currentPassword
+              - newPassword
+              title: ChangeInput
+              type: object
+      security:
+      - BearerAuth: []
+components:
+  schemas:
+    HTTPValidationError:
+      properties:
+        detail:
+          items:
+            $ref: '#/components/schemas/ValidationError'
+          type: array
+          title: Detail
+      type: object
+      title: HTTPValidationError
+    TokenOutput:
+      properties:
+        access_token:
+          type: string
+          title: Access Token
+        token_type:
+          type: string
+          title: Token Type
+        expires_in:
+          type: integer
+          title: Expires In
+      type: object
+      required:
+      - access_token
+      - token_type
+      - expires_in
+      title: TokenOutput
+    ValidationError:
+      properties:
+        loc:
+          items:
+            anyOf:
+            - type: string
+            - type: integer
+          type: array
+          title: Location
+        msg:
+          type: string
+          title: Message
+        type:
+          type: string
+          title: Error Type
+      type: object
+      required:
+      - loc
+      - msg
+      - type
+      title: ValidationError
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT

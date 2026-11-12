@@ -1,0 +1,8 @@
+Asunto: Su cuenta fue desactivada
+
+Hola,
+
+Con motivo de su retiro de la empresa, la cuenta {{email}} y todos sus accesos fueron
+desactivados de forma permanente.
+
+Recursos Humanos

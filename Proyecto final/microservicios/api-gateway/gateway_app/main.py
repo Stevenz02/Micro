@@ -3,7 +3,7 @@ import logging
 import json
 import copy
 from contextlib import asynccontextmanager
-from urllib.parse import urlsplit, urlunsplit
+from urllib.parse import quote, urlsplit, urlunsplit
 
 import httpx
 from fastapi import FastAPI, Request
@@ -68,6 +68,7 @@ PUBLIC_ROUTES = {
     ("GET", "/health"),
     ("GET", "/metrics"),
     ("GET", "/docs"),
+    ("GET", "/swagger"),
     ("GET", "/redoc"),
     ("GET", "/openapi.json"),
     ("GET", "/auth/docs"),
@@ -209,8 +210,8 @@ def create_app(settings: Settings | None = None, client: httpx.AsyncClient | Non
                 yield
 
     app = FastAPI(
-        title="Reto 8 - API Gateway",
-        version="8.0.0",
+        title="Proyecto final - API Gateway",
+        version="1.0.0",
         lifespan=lifespan,
         openapi_url=None,
         description=("Entrada única con validación HS256, RBAC y propiedad del perfil. "
@@ -332,6 +333,48 @@ def create_app(settings: Settings | None = None, client: httpx.AsyncClient | Non
         return await proxy(request, "departamentos-service", request.app.state.settings.departamentos_url,
                            target_path="/openapi.json")
 
+    @app.get("/empleados/{empleado_id}/completo", tags=["Composición"],
+             summary="Empleado y perfil en una sola respuesta (API Composition)",
+             responses={404: {"description": "El empleado no existe"},
+                        503: {"description": "Empleados no disponible"}})
+    async def empleado_completo(empleado_id: str, request: Request):
+        """Combina Empleados (dato obligatorio) y Perfiles (dato complementario) en paralelo.
+
+        Fallo parcial: si Perfiles no responde, se devuelve igualmente el empleado con
+        `perfil: null` y `parcial: true`; solo la caída de Empleados produce un error.
+        """
+        s = request.app.state.settings
+        claims = request.state.claims
+        headers = {"X-Authenticated-Employee-Id": claims["sub"], "X-Authenticated-Role": claims["role"]}
+        segmento = quote(empleado_id, safe="")
+
+        async def consultar(base_url, path):
+            try:
+                return await request.app.state.http.get(_target_url(base_url, path, ""), headers=headers,
+                                                        timeout=s.timeout)
+            except (httpx.TimeoutException, httpx.TransportError):
+                return None
+
+        empleado, perfil = await asyncio.gather(
+            consultar(s.empleados_url, f"/empleados/{segmento}"),
+            consultar(s.perfiles_url, f"/perfiles/{segmento}"),
+        )
+        if empleado is None:
+            return _upstream_error("empleados-service")
+        if empleado.status_code != 200:
+            return Response(content=empleado.content, status_code=empleado.status_code,
+                            media_type=empleado.headers.get("content-type"))
+        cuerpo = {"empleado": empleado.json(), "perfil": None, "parcial": False}
+        if perfil is not None and perfil.status_code == 200:
+            cuerpo["perfil"] = perfil.json()
+        elif perfil is None or perfil.status_code != 404:
+            # 404 = el perfil aún no se ha creado (consistencia eventual); cualquier otra cosa es una caída
+            logger.warning("Composición parcial: perfiles-service no disponible",
+                           extra={"employeeId": empleado_id})
+            cuerpo["parcial"] = True
+            cuerpo["advertencia"] = "perfiles-service no disponible; se devuelve solo el empleado"
+        return JSONResponse(cuerpo)
+
     async def empleados(request: Request):
         return await proxy(request, "empleados-service", request.app.state.settings.empleados_url)
 
@@ -418,11 +461,15 @@ def create_app(settings: Settings | None = None, client: httpx.AsyncClient | Non
 
     @app.get("/docs", include_in_schema=False)
     async def gateway_docs():
-        return get_swagger_ui_html(openapi_url="/openapi.json", title="Reto 6 - Gateway Swagger")
+        return get_swagger_ui_html(openapi_url="/openapi.json", title="Proyecto final - Gateway Swagger")
+
+    @app.get("/swagger", include_in_schema=False)
+    async def gateway_swagger():
+        return get_swagger_ui_html(openapi_url="/openapi.json", title="Proyecto final - Gateway Swagger")
 
     @app.get("/redoc", include_in_schema=False)
     async def gateway_redoc():
-        return get_redoc_html(openapi_url="/openapi.json", title="Reto 6 - Gateway ReDoc")
+        return get_redoc_html(openapi_url="/openapi.json", title="Proyecto final - Gateway ReDoc")
 
     @app.get("/openapi.json", include_in_schema=False)
     async def gateway_openapi(request: Request):

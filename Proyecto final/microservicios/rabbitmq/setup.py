@@ -55,6 +55,8 @@ bindings = {
         "usuario.creado", "usuario.recuperacion", "cuenta.activada", "cuenta.desactivada",
     ],
     "vacaciones.empleados": ["empleado.creado", "empleado.actualizado", "empleado.retirado"],
+    # Proyecto final: Empleados refleja el estado EN_VACACIONES / ACTIVO
+    "empleados.vacaciones": ["vacaciones.iniciadas", "vacaciones.finalizadas"],
     # Reto 5: cola nueva del auth-service
     "auth.events": [
         "empleado.creado", "empleado.retirado",

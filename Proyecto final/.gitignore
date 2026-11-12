@@ -14,3 +14,4 @@ secrets/
 *.pyc
 *.log
 .coverage
+.coverage.*

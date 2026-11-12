@@ -10,6 +10,8 @@ RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /perfiles .
 FROM alpine:3.21
 RUN addgroup -S app && adduser -S -G app app
 COPY --from=builder /perfiles /usr/local/bin/perfiles
+COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 USER app
 EXPOSE 8083
-ENTRYPOINT ["/usr/local/bin/perfiles"]
+# Carga los Docker Secrets (variables *_FILE) y luego ejecuta el servicio
+ENTRYPOINT ["/bin/sh","/usr/local/bin/docker-entrypoint.sh","/usr/local/bin/perfiles"]

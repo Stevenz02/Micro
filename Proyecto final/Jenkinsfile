@@ -1,76 +1,120 @@
+// Pipeline integral del ecosistema: build + test de los 5 lenguajes -> quality (SonarQube,
+// cobertura >= 70 %) -> package (7 imagenes al registry local) -> pruebas BDD de extremo a extremo.
+// Cada microservicio tiene ademas su propio pipeline en microservicios/<servicio>/Jenkinsfile.
 pipeline {
   agent any
   options { timestamps(); disableConcurrentBuilds() }
   parameters {
-    booleanParam(name: 'RUN_E2E', defaultValue: true, description: 'Levantar el ecosistema y ejecutar Behave al final')
+    booleanParam(name: 'RUN_E2E', defaultValue: true, description: 'Ejecutar la suite BDD (Behave) contra el sistema desplegado')
   }
   environment {
-    PROJECT_DIR = 'Proyecto final'
     CI_VENV = '.ci/venv'
     SONARQUBE_ENV = 'sonarqube-proyecto-final'
   }
   stages {
-    stage('Preparar configuración efímera') {
+    stage('Checkout') {
       steps {
-        dir(env.PROJECT_DIR) {
-          sh 'chmod +x scripts/setup.sh && scripts/setup.sh --force'
-          sh 'docker compose config --quiet'
-        }
+        // El proyecto esta montado en /proyecto (solo lectura). Se copia al workspace sin
+        // secretos ni artefactos locales: el pipeline nunca ve .env ni secrets/.
+        sh '''
+          set -eu
+          find . -mindepth 1 -maxdepth 1 -exec rm -rf {} +
+          tar -C /proyecto --exclude=./secrets --exclude=./.env --exclude=./.git \
+              --exclude=node_modules --exclude=target --exclude=bin --exclude=obj \
+              --exclude=__pycache__ --exclude=reports --exclude=.ci -cf - . | tar -xf -
+        '''
       }
     }
-    stage('Pruebas unitarias') {
+    stage('Build + Test') {
       parallel {
         stage('Python') {
           steps {
-            dir(env.PROJECT_DIR) {
+            sh '''
+              set -eu
+              python3 -m venv "$CI_VENV"
+              "$CI_VENV/bin/python" -m pip install --disable-pip-version-check -q -r microservicios/requirements-test.txt
+              mkdir -p microservicios/reports
+              export COVERAGE_FILE="$PWD/microservicios/reports/.coverage"
+              PYTHONPATH=microservicios "$CI_VENV/bin/python" -m pytest microservicios/tests -m 'not integration' \
+                --cov=microservicios/empleados/app --cov=microservicios/auth/auth_app \
+                --cov=microservicios/api-gateway/gateway_app --cov=microservicios/shared \
+                --cov-report=term --cov-report=xml:microservicios/reports/python-coverage.xml \
+                --junitxml=microservicios/reports/python-junit.xml
+            '''
+          }
+        }
+        stage('Node.js') {
+          steps {
+            dir('microservicios/departamentos') {
               sh '''
-                python3 -m venv "$CI_VENV"
-                "$CI_VENV/bin/python" -m pip install --disable-pip-version-check -q -r microservicios/requirements-test.txt
-                mkdir -p microservicios/reports
-                PYTHONPATH=microservicios "$CI_VENV/bin/python" -m pytest microservicios/tests -m 'not integration' \
-                  --cov=microservicios/empleados/app --cov=microservicios/auth/auth_app \
-                  --cov=microservicios/api-gateway/gateway_app \
-                  --cov-report=xml:microservicios/reports/python-coverage.xml \
-                  --junitxml=microservicios/reports/python-junit.xml
+                set -eu
+                npm ci --no-audit --no-fund
+                mkdir -p coverage
+                node --test --experimental-test-coverage --test-coverage-include='src/**/*.js' \
+                  --test-reporter=spec --test-reporter-destination=stdout \
+                  --test-reporter=lcov --test-reporter-destination=coverage/lcov.info
               '''
             }
           }
         }
-        stage('Node.js') {
-          steps { dir("${env.PROJECT_DIR}/microservicios/departamentos") { sh 'npm ci && npm test' } }
-        }
         stage('Go') {
-          steps { dir("${env.PROJECT_DIR}/microservicios/perfiles") { sh 'go test -coverprofile=coverage.out ./...' } }
+          steps {
+            dir('microservicios/perfiles') {
+              sh '''
+                set -eu
+                go mod tidy
+                go vet ./...
+                go test -covermode=atomic -coverprofile=coverage.out ./...
+              '''
+            }
+          }
         }
         stage('Java') {
-          steps { dir("${env.PROJECT_DIR}/microservicios/notificaciones") { sh 'mvn -B -ntp verify' } }
+          steps { dir('microservicios/notificaciones') { sh 'mvn -B -ntp verify' } }
         }
         stage('.NET') {
-          steps { dir(env.PROJECT_DIR) { sh 'dotnet test microservicios/vacaciones.tests/Vacaciones.Tests.csproj --configuration Release --collect:"XPlat Code Coverage"' } }
+          steps { sh 'dotnet test microservicios/vacaciones.tests/Vacaciones.Tests.csproj --configuration Release' }
         }
       }
     }
-    stage('SonarQube Quality Gate') {
+    stage('Quality') {
       steps {
-        dir(env.PROJECT_DIR) {
-          withSonarQubeEnv(env.SONARQUBE_ENV) { sh 'sonar-scanner -Dproject.settings=sonar-project.properties' }
-          timeout(time: 15, unit: 'MINUTES') { waitForQualityGate abortPipeline: true }
-        }
+        withSonarQubeEnv(env.SONARQUBE_ENV) { sh 'sonar-scanner -Dproject.settings=sonar-project.properties' }
+        // Quality Gate "Cobertura 70": por debajo del 70 % el pipeline falla aqui
+        timeout(time: 15, unit: 'MINUTES') { waitForQualityGate abortPipeline: true }
       }
     }
     stage('Package') {
-      steps { dir(env.PROJECT_DIR) { sh 'docker compose build' } }
+      steps {
+        sh '''
+          set -eu
+          publicar() {  # nombre, contexto, Dockerfile
+            IMAGE="$REGISTRY_PUSH_HOST/rrhh/$1"
+            docker build -q -t "$IMAGE:$BUILD_NUMBER" -t "$IMAGE:latest" -f "$3" "$2"
+            docker push -q "$IMAGE:$BUILD_NUMBER"
+            docker push -q "$IMAGE:latest"
+            echo "Imagen publicada: $IMAGE:$BUILD_NUMBER"
+          }
+          for servicio in api-gateway auth empleados; do
+            publicar "$servicio" microservicios "microservicios/$servicio/Dockerfile"
+          done
+          for servicio in departamentos perfiles notificaciones vacaciones; do
+            publicar "$servicio" "microservicios/$servicio" "microservicios/$servicio/Dockerfile"
+          done
+        '''
+      }
     }
     stage('BDD end-to-end') {
       when { expression { params.RUN_E2E } }
       steps {
-        dir(env.PROJECT_DIR) {
-          sh 'docker compose up -d --build --wait --wait-timeout 600 api-gateway'
+        // La suite corre contra el ecosistema desplegado por Docker Compose (misma red Docker).
+        // Las credenciales del administrador llegan como credencial de Jenkins (Docker Secret).
+        withCredentials([usernamePassword(credentialsId: 'proyecto-final-e2e-admin',
+                                          usernameVariable: 'ADMIN_EMAIL', passwordVariable: 'ADMIN_PASSWORD')]) {
           sh '''
-            ADMIN_PASSWORD=$(cat secrets/admin-password.txt) \
-            ADMIN_EMAIL=admin@proyecto.local \
-            BASE_URL=http://host.docker.internal:8080 \
-            "$CI_VENV/bin/python" e2e-tests/run.py
+            set -eu
+            "$CI_VENV/bin/python" -m pip install --disable-pip-version-check -q -r e2e-tests/requirements.txt
+            BASE_URL=http://api-gateway:8080 "$CI_VENV/bin/python" e2e-tests/run.py
           '''
         }
       }
@@ -78,11 +122,8 @@ pipeline {
   }
   post {
     always {
-      dir(env.PROJECT_DIR) {
-        junit testResults: 'microservicios/reports/*-junit.xml,e2e-tests/reports/junit.xml', allowEmptyResults: true
-        archiveArtifacts artifacts: 'microservicios/reports/**,e2e-tests/reports/**', allowEmptyArchive: true
-        sh 'docker compose down -v --remove-orphans || true'
-      }
+      junit testResults: 'microservicios/reports/*-junit.xml,microservicios/notificaciones/target/surefire-reports/TEST-*.xml,e2e-tests/reports/junit.xml', allowEmptyResults: true
+      archiveArtifacts artifacts: 'microservicios/reports/*.xml,e2e-tests/reports/**', allowEmptyArchive: true
     }
   }
 }

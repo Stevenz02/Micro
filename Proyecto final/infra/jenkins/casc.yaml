@@ -12,6 +12,8 @@ jenkins:
     loggedInUsersCanDoAnything:
       allowAnonymousRead: false
 
+# JENKINS_ADMIN_PASSWORD y E2E_ADMIN_PASSWORD se resuelven desde /run/secrets/<NOMBRE>
+# (Docker Compose Secrets); el token de SonarQube lo genera sonar-init en un volumen compartido.
 credentials:
   system:
     domainCredentials:
@@ -38,21 +40,31 @@ unclassified:
         serverUrl: "${SONAR_HOST_URL_JENKINS}"
         credentialsId: "sonarqube-token"
 
+# Los pipelines se leen de los Jenkinsfile del proyecto, montado en /proyecto (solo lectura).
+# Tras editar un Jenkinsfile: docker compose restart jenkins.
 jobs:
   - script: |
+      def raiz = '/proyecto'
+      def servicios = ['empleados', 'departamentos', 'auth', 'perfiles', 'vacaciones', 'notificaciones', 'api-gateway']
+      servicios.each { nombre ->
+        pipelineJob('ms-' + nombre) {
+          description('CI de ' + nombre + ': build, test (cobertura minima 70), quality (SonarQube) y package (registry local).')
+          logRotator { numToKeep(15) }
+          definition {
+            cps {
+              script(new File(raiz + '/microservicios/' + nombre + '/Jenkinsfile').getText('UTF-8'))
+              sandbox(true)
+            }
+          }
+        }
+      }
       pipelineJob('proyecto-final') {
-        description('Build, pruebas, Quality Gate, empaquetado y BDD del ecosistema completo.')
+        description('Pipeline integral: build y pruebas de los 5 lenguajes, Quality Gate, 7 imagenes al registry y BDD.')
         logRotator { numToKeep(20) }
         definition {
-          cpsScm {
-            scm {
-              git {
-                remote { url('${REPO_URL}') }
-                branches('${REPO_BRANCH}')
-              }
-            }
-            scriptPath('Proyecto final/Jenkinsfile')
-            lightweight(true)
+          cps {
+            script(new File(raiz + '/Jenkinsfile').getText('UTF-8'))
+            sandbox(true)
           }
         }
       }

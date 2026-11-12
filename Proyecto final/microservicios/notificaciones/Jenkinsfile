@@ -1,0 +1,74 @@
+// Pipeline de CI de Notificaciones (Java/Spring Boot): build -> test (cobertura >= 70 %) -> quality (SonarQube) -> package.
+// Jenkins lo registra con JCasC (infra/jenkins/casc.yaml) leyendo este archivo.
+pipeline {
+  agent any
+  options { timestamps(); disableConcurrentBuilds() }
+  environment {
+    SONARQUBE_ENV = 'sonarqube-proyecto-final'
+  }
+  stages {
+    stage('Checkout') {
+      steps {
+        // El proyecto esta montado en /proyecto (solo lectura). Se copia al workspace sin
+        // secretos ni artefactos locales: el pipeline nunca ve .env ni secrets/.
+        sh '''
+          set -eu
+          find . -mindepth 1 -maxdepth 1 -exec rm -rf {} +
+          tar -C /proyecto --exclude=./secrets --exclude=./.env --exclude=./.git \
+              --exclude=node_modules --exclude=target --exclude=bin --exclude=obj \
+              --exclude=__pycache__ --exclude=reports --exclude=.ci -cf - . | tar -xf -
+        '''
+      }
+    }
+    stage('Build') {
+      steps {
+        dir('microservicios/notificaciones') {
+          sh '''
+            mvn -B -ntp -DskipTests compile
+          '''
+        }
+      }
+    }
+    stage('Test') {
+      steps {
+        dir('microservicios/notificaciones') {
+          // verify ejecuta las pruebas y genera el reporte JaCoCo (target/site/jacoco/jacoco.xml)
+          sh '''
+            mvn -B -ntp verify
+          '''
+        }
+      }
+    }
+    stage('Quality') {
+      steps {
+        dir('microservicios/notificaciones') {
+          withSonarQubeEnv(env.SONARQUBE_ENV) {
+            sh '''
+              sonar-scanner
+            '''
+          }
+        }
+        // Quality Gate "Cobertura 70": si la cobertura cae por debajo del 70 % el pipeline falla
+        timeout(time: 10, unit: 'MINUTES') { waitForQualityGate abortPipeline: true }
+      }
+    }
+    stage('Package') {
+      steps {
+        sh '''
+          set -eu
+          IMAGE="$REGISTRY_PUSH_HOST/rrhh/notificaciones"
+          docker build -t "$IMAGE:$BUILD_NUMBER" -t "$IMAGE:latest" -f microservicios/notificaciones/Dockerfile microservicios/notificaciones
+          docker push "$IMAGE:$BUILD_NUMBER"
+          docker push "$IMAGE:latest"
+          echo "Imagen publicada: $IMAGE:$BUILD_NUMBER"
+        '''
+      }
+    }
+  }
+  post {
+    always {
+      junit testResults: 'microservicios/notificaciones/target/surefire-reports/TEST-*.xml', allowEmptyResults: true
+      archiveArtifacts artifacts: 'microservicios/notificaciones/target/site/jacoco/jacoco.xml', allowEmptyArchive: true
+    }
+  }
+}

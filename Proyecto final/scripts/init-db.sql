@@ -1,0 +1,19 @@
+-- Inicialización de bases de datos
+--
+-- Cada microservicio es dueño de su propia base PostgreSQL, por lo que no existe un esquema
+-- único: Docker Compose monta el init.sql de cada servicio en su contenedor de base de datos
+-- (/docker-entrypoint-initdb.d) y se ejecuta una sola vez, al crear el volumen.
+--
+--   Base            Esquema inicial
+--   empleados       microservicios/empleados/init.sql
+--   departamentos   microservicios/departamentos/init.sql
+--   perfiles        microservicios/perfiles/init.sql
+--   notificaciones  microservicios/notificaciones/init.sql
+--   vacaciones      microservicios/vacaciones/init.sql
+--   auth            lo crea auth-service al arrancar (incluye el administrador semilla)
+--
+-- Las migraciones posteriores son idempotentes y las aplica cada servicio al iniciar
+-- (por ejemplo, la tabla eventos_procesados para la deduplicación de eventos).
+--
+-- Este archivo no contiene sentencias: es el índice de los scripts anteriores.
+SELECT 'Los esquemas se inicializan por servicio; ver los comentarios de este archivo.' AS info;

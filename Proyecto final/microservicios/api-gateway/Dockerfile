@@ -20,11 +20,15 @@ COPY --from=builder /install /usr/local
 COPY shared ./shared
 COPY api-gateway/gateway_app ./gateway_app
 COPY logging.json ./logging.json
+COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 
 RUN useradd --create-home appuser
 USER appuser
 
 EXPOSE 8080
+
+# Carga los Docker Secrets (variables *_FILE) y luego ejecuta el servicio
+ENTRYPOINT ["/bin/sh", "/usr/local/bin/docker-entrypoint.sh"]
 
 # --log-config: logs JSON (timestamp, level, service, traceId, message) para Loki
 CMD ["uvicorn", "gateway_app.main:app", "--host", "0.0.0.0", "--port", "8080", "--log-config", "logging.json"]

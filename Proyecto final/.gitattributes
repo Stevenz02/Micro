@@ -1,0 +1,2 @@
+# Los scripts de shell se copian a imagenes Linux: siempre LF, tambien en Windows
+*.sh text eol=lf

@@ -1,0 +1,526 @@
+openapi: 3.1.0
+info:
+  title: Proyecto final - Empleados
+  description: Persistencia independiente y validacion de departamentos por HTTP con Circuit Breaker.
+  version: 1.0.0
+paths:
+  /health:
+    get:
+      tags:
+      - Salud
+      summary: Health
+      operationId: health_health_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '503':
+          description: Base de datos no disponible
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Error interno de persistencia
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /health/dependencies:
+    get:
+      tags:
+      - Salud
+      summary: Dependencies
+      operationId: dependencies_health_dependencies_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '503':
+          description: Base de datos no disponible
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /empleados:
+    post:
+      tags:
+      - Empleados
+      summary: Registrar empleado activo o pendiente
+      operationId: registrar_empleados_post
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Empleado'
+      responses:
+        '201':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Empleado'
+        '400':
+          description: Email, numero o id duplicado; departamento inexistente
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Recurso no encontrado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Error interno de persistencia
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '503':
+          description: Base de datos no disponible
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '202':
+          description: Empleado recibido en estado PENDIENTE por dependencia no disponible
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Empleado'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    get:
+      tags:
+      - Empleados
+      summary: Listar empleados
+      operationId: listar_empleados_get
+      parameters:
+      - name: estado
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - enum:
+            - ACTIVO
+            - EN_VACACIONES
+            - RETIRADO
+            - PENDIENTE
+            - RECHAZADO
+            type: string
+          - type: 'null'
+          title: Estado
+      - name: desde
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+            format: date
+          - type: 'null'
+          title: Desde
+      - name: hasta
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+            format: date
+          - type: 'null'
+          title: Hasta
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Empleado'
+                title: Response Listar Empleados Get
+        '500':
+          description: Error interno de persistencia
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '503':
+          description: Base de datos no disponible
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /empleados/{id}:
+    put:
+      tags:
+      - Empleados
+      summary: Actualizar un empleado activo sin modificar su identidad o estado
+      operationId: actualizar_empleados__id__put
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EmpleadoActualizacion'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Empleado'
+        '400':
+          description: Email, numero o id duplicado; departamento inexistente
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Recurso no encontrado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Error interno de persistencia
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '503':
+          description: Base de datos no disponible
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    delete:
+      tags:
+      - Empleados
+      summary: Retirar un empleado mediante baja logica
+      operationId: retirar_empleados__id__delete
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Id
+      - name: motivo
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Motivo obligatorio para el primer retiro; la repetición idempotente no lo requiere
+          title: Motivo
+        description: Motivo obligatorio para el primer retiro; la repetición idempotente no lo requiere
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Empleado'
+        '400':
+          description: Email, numero o id duplicado; departamento inexistente
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Recurso no encontrado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Error interno de persistencia
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '503':
+          description: Base de datos no disponible
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    get:
+      tags:
+      - Empleados
+      summary: Consultar empleado
+      operationId: obtener_empleados__id__get
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Empleado'
+        '404':
+          description: Recurso no encontrado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Error interno de persistencia
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '503':
+          description: Base de datos no disponible
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+components:
+  schemas:
+    Empleado:
+      properties:
+        id:
+          type: string
+          minLength: 1
+          title: Id
+          description: Identificador único del empleado
+          examples:
+          - E001
+        nombre:
+          type: string
+          minLength: 1
+          title: Nombre
+          description: Nombre del empleado
+          examples:
+          - Juan
+        apellido:
+          type: string
+          minLength: 1
+          title: Apellido
+          description: Apellido del empleado
+          examples:
+          - Pérez
+        email:
+          type: string
+          minLength: 3
+          title: Email
+          description: Correo electrónico corporativo
+          examples:
+          - juan.perez@empresa.com
+        numeroEmpleado:
+          type: string
+          minLength: 1
+          title: Numeroempleado
+          description: Número único asignado al empleado
+          examples:
+          - EMP-2026-001
+        cargo:
+          type: string
+          minLength: 1
+          title: Cargo
+          description: Cargo actual del empleado
+          examples:
+          - Desarrollador Senior
+        area:
+          type: string
+          minLength: 1
+          title: Area
+          description: Área organizacional
+          examples:
+          - Tecnología
+        departamentoId:
+          type: string
+          minLength: 1
+          title: Departamentoid
+          description: Identificador textual del departamento
+          examples:
+          - IT
+        fechaIngreso:
+          type: string
+          format: date
+          title: Fechaingreso
+          description: Fecha de ingreso del empleado
+          examples:
+          - '2026-02-10'
+        estado:
+          type: string
+          enum:
+          - ACTIVO
+          - EN_VACACIONES
+          - RETIRADO
+          - PENDIENTE
+          - RECHAZADO
+          title: Estado
+          description: Estado actual del empleado. ACTIVO, EN_VACACIONES y RETIRADO son el ciclo de vida; PENDIENTE
+            y RECHAZADO solo existen mientras se valida el departamento (fallback del Circuit Breaker)
+          default: ACTIVO
+          examples:
+          - ACTIVO
+          - EN_VACACIONES
+          - RETIRADO
+        fechaRetiro:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Fecharetiro
+          description: Instante UTC de la baja logica; solo existe para empleados RETIRADO
+      type: object
+      required:
+      - id
+      - nombre
+      - apellido
+      - email
+      - numeroEmpleado
+      - cargo
+      - area
+      - departamentoId
+      - fechaIngreso
+      title: Empleado
+      examples:
+      - apellido: Pérez
+        area: Tecnología
+        cargo: Desarrollador Senior
+        departamentoId: IT
+        email: juan.perez@empresa.com
+        estado: ACTIVO
+        fechaIngreso: '2026-02-10'
+        id: E001
+        nombre: Juan
+        numeroEmpleado: EMP-2026-001
+    EmpleadoActualizacion:
+      properties:
+        nombre:
+          type: string
+          minLength: 1
+          title: Nombre
+        apellido:
+          type: string
+          minLength: 1
+          title: Apellido
+        email:
+          type: string
+          minLength: 3
+          title: Email
+        numeroEmpleado:
+          type: string
+          minLength: 1
+          title: Numeroempleado
+        cargo:
+          type: string
+          minLength: 1
+          title: Cargo
+        area:
+          type: string
+          minLength: 1
+          title: Area
+        departamentoId:
+          type: string
+          minLength: 1
+          title: Departamentoid
+        fechaIngreso:
+          type: string
+          format: date
+          title: Fechaingreso
+      additionalProperties: false
+      type: object
+      required:
+      - nombre
+      - apellido
+      - email
+      - numeroEmpleado
+      - cargo
+      - area
+      - departamentoId
+      - fechaIngreso
+      title: EmpleadoActualizacion
+      description: Campos de negocio editables; id, estado y fechaRetiro quedan protegidos.
+    Error:
+      properties:
+        detail:
+          type: string
+          title: Detail
+      type: object
+      required:
+      - detail
+      title: Error
+    HTTPValidationError:
+      properties:
+        detail:
+          items:
+            $ref: '#/components/schemas/ValidationError'
+          type: array
+          title: Detail
+      type: object
+      title: HTTPValidationError
+    ValidationError:
+      properties:
+        loc:
+          items:
+            anyOf:
+            - type: string
+            - type: integer
+          type: array
+          title: Location
+        msg:
+          type: string
+          title: Message
+        type:
+          type: string
+          title: Error Type
+      type: object
+      required:
+      - loc
+      - msg
+      - type
+      title: ValidationError

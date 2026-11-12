@@ -1,0 +1,264 @@
+openapi: 3.0.3
+info:
+  title: Proyecto final - Departamentos
+  version: 1.0.0
+  description: API independiente con persistencia PostgreSQL.
+servers:
+- url: /
+components:
+  schemas:
+    Departamento:
+      type: object
+      required:
+      - id
+      - nombre
+      - descripcion
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+          minLength: 1
+          description: Identificador único
+          example: IT
+        nombre:
+          type: string
+          minLength: 1
+          description: Nombre del departamento
+          example: Tecnología
+        descripcion:
+          type: string
+          minLength: 1
+          description: Descripción del departamento
+          example: Departamento de TI
+    DepartamentoActualizacion:
+      type: object
+      required:
+      - nombre
+      - descripcion
+      additionalProperties: false
+      properties:
+        nombre:
+          type: string
+          minLength: 1
+          example: Tecnología
+        descripcion:
+          type: string
+          minLength: 1
+          example: Departamento de TI y plataformas
+    Error:
+      type: object
+      required:
+      - detail
+      properties:
+        detail:
+          type: string
+    Salud:
+      type: object
+      required:
+      - status
+      - service
+      - checks
+      properties:
+        status:
+          type: string
+          enum:
+          - UP
+          - DOWN
+        service:
+          type: string
+        checks:
+          type: object
+          additionalProperties:
+            type: string
+            enum:
+            - UP
+            - DOWN
+paths:
+  /departamentos:
+    post:
+      tags:
+      - Departamentos
+      summary: Crear departamento
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Departamento'
+      responses:
+        '201':
+          description: Departamento creado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Departamento'
+        '400':
+          description: Datos inválidos o id duplicado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '413':
+          description: Cuerpo demasiado grande
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Error interno
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '503':
+          description: Base de datos no disponible
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+    get:
+      tags:
+      - Departamentos
+      summary: Listar departamentos
+      responses:
+        '200':
+          description: Departamentos registrados
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Departamento'
+        '500':
+          description: Error interno
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '503':
+          description: Base de datos no disponible
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /departamentos/{id}:
+    parameters:
+    - name: id
+      in: path
+      required: true
+      schema:
+        type: string
+      description: Identificador del departamento
+    get:
+      tags:
+      - Departamentos
+      summary: Consultar departamento
+      responses:
+        '200':
+          description: Departamento encontrado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Departamento'
+        '404':
+          description: Departamento inexistente
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Error interno
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '503':
+          description: Base de datos no disponible
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+    put:
+      tags:
+      - Departamentos
+      summary: Actualizar nombre y descripción (el id es inmutable)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DepartamentoActualizacion'
+      responses:
+        '200':
+          description: Departamento actualizado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Departamento'
+        '400':
+          description: Datos inválidos
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Departamento inexistente
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Error interno
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '503':
+          description: Base de datos no disponible
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+    delete:
+      tags:
+      - Departamentos
+      summary: Eliminar departamento
+      responses:
+        '204':
+          description: Departamento eliminado
+        '404':
+          description: Departamento inexistente
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Error interno
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '503':
+          description: Base de datos no disponible
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /health:
+    get:
+      tags:
+      - Salud
+      summary: Comprobar API y esquema de BD
+      responses:
+        '200':
+          description: Servicio listo
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Salud'
+        '503':
+          description: Servicio degradado (BD caída)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Salud'

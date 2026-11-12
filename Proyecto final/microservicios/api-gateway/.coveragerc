@@ -1,0 +1,8 @@
+# Alcance de la cobertura unitaria (el mismo que usa SonarQube en sonar.coverage.exclusions).
+# Quedan fuera los adaptadores de E/S, que se validan con las pruebas de integracion
+# (Testcontainers) y la suite BDD: acceso SQL y lectura de configuracion del entorno.
+[run]
+omit =
+    */config.py
+    */repository.py
+    */__init__.py

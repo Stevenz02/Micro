@@ -8,18 +8,29 @@ import httpx
 import psycopg
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.responses import JSONResponse
+from prometheus_client import Counter
 from pydantic import BaseModel
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
-from shared.observability import broker_up, health_response, no_tracing, setup_observability
+from shared.observability import (add_instance_header, broker_up, health_response, no_tracing,
+                                  setup_observability)
 
 from .config import Settings, database_config
 from .departamentos import DepartamentosClient
 from .events import RabbitPublisher, created_data, updated_data, retired_data
 from .models import Empleado, EmpleadoActualizacion
 from .repository import Repository
+from .vacaciones_consumer import VacacionesConsumer
 
 logger = logging.getLogger(__name__)
+
+# Métricas de negocio (se exponen en /metrics junto a las HTTP; Prometheus las suma entre réplicas)
+EMPLEADOS_CREADOS = Counter("empleados_creados_total", "Empleados dados de alta en estado ACTIVO")
+EMPLEADOS_RETIRADOS = Counter("empleados_retirados_total", "Empleados pasados a RETIRADO")
+EMPLEADOS_PENDIENTES = Counter("empleados_pendientes_total",
+                               "Altas aplazadas por el fallback del Circuit Breaker de Departamentos")
+EVENTOS_NO_PUBLICADOS = Counter("eventos_publicacion_errores_total",
+                                "Eventos que no se pudieron publicar tras confirmar la base de datos", ["tipo"])
 
 
 class Error(BaseModel):
@@ -40,6 +51,7 @@ def publish_after_commit(publisher, event_type, data):
     try:
         publisher.publish(event_type, data)
     except Exception:
+        EVENTOS_NO_PUBLICADOS.labels(tipo=event_type).inc()
         logger.exception("No se pudo publicar %s para empleado %s tras commit de BD", event_type, data["empleadoId"])
 
 
@@ -58,6 +70,7 @@ def reconciliar_pendientes(repo, departamentos, limit=50, publisher=None):
         else:
             activado = repo.actualizar_estado(empleado.id, "ACTIVO")
             if activado is not None:
+                EMPLEADOS_CREADOS.inc()
                 publish_after_commit(publisher, "empleado.creado", created_data(activado))
                 resultado["activados"] += 1
     return resultado
@@ -98,16 +111,20 @@ def create_app(repository=None, departamentos=None, publisher=None):
                 tarea_reconciliacion = asyncio.create_task(
                     reconciliar_periodicamente(app, settings.reconciliation_interval)
                 )
+                # ACTIVO <-> EN_VACACIONES según los eventos del scheduler de vacaciones
+                consumidor = VacacionesConsumer(app.state.repository)
+                consumidor.start()
                 try:
                     yield
                 finally:
+                    consumidor.stop()
                     tarea_reconciliacion.cancel()
                     with suppress(asyncio.CancelledError):
                         await tarea_reconciliacion
 
     app = FastAPI(
-        title="Reto 8 - Empleados",
-        version="8.0.0",
+        title="Proyecto final - Empleados",
+        version="1.0.0",
         lifespan=lifespan,
         description="Persistencia independiente y validacion de departamentos por HTTP con Circuit Breaker.",
     )
@@ -179,10 +196,12 @@ def create_app(repository=None, departamentos=None, publisher=None):
                 raise
             pendiente = empleado.model_copy(update={"estado": "PENDIENTE"})
             creado = crear_empleado(repo, pendiente)
+            EMPLEADOS_PENDIENTES.inc()
             logger.warning("Empleado registrado PENDIENTE: departamentos no disponible",
                            extra={"employeeId": creado.id})
             return JSONResponse(status_code=202, content=creado.model_dump(mode="json"))
         creado = crear_empleado(repo, empleado.model_copy(update={"estado": "ACTIVO"}))
+        EMPLEADOS_CREADOS.inc()
         logger.info("Empleado creado exitosamente", extra={"employeeId": creado.id})
         publish_after_commit(app.state.publisher, "empleado.creado", created_data(creado))
         return creado
@@ -195,7 +214,7 @@ def create_app(repository=None, departamentos=None, publisher=None):
         summary="Listar empleados",
     )
     def listar(
-        estado: Literal["ACTIVO", "PENDIENTE", "RECHAZADO", "RETIRADO"] | None = None,
+        estado: Literal["ACTIVO", "EN_VACACIONES", "RETIRADO", "PENDIENTE", "RECHAZADO"] | None = None,
         desde: date | None = None,
         hasta: date | None = None,
     ):
@@ -248,6 +267,7 @@ def create_app(repository=None, departamentos=None, publisher=None):
             raise HTTPException(400, "motivo es obligatorio para retirar por primera vez")
         retirado = repo.retirar(id, motivo.strip())
         if retirado is not None:
+            EMPLEADOS_RETIRADOS.inc()
             publish_after_commit(app.state.publisher, "empleado.retirado", retired_data(retirado, motivo.strip()))
         return retirado or repo.obtener(id)
 
@@ -265,6 +285,7 @@ def create_app(repository=None, departamentos=None, publisher=None):
         return empleado
 
     setup_observability(app, instrument_httpx=True)
+    add_instance_header(app)
     return app
 
 

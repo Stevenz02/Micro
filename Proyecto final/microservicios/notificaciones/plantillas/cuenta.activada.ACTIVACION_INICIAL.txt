@@ -1,0 +1,8 @@
+Asunto: Su cuenta fue activada
+
+Hola,
+
+Su contraseña quedó establecida y la cuenta {{email}} ya está activa.
+Puede iniciar sesión con POST /auth/login.
+
+Recursos Humanos

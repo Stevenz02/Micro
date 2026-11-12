@@ -64,3 +64,41 @@ test('Swagger, assets locales y OpenAPI documentan el contrato', async (t) => {
   assert.deepEqual(spec.components.schemas.Departamento.required, ['id', 'nombre', 'descripcion']);
   for (const status of ['201', '400', '500', '503']) assert.ok(spec.paths['/departamentos'].post.responses[status]);
 });
+
+const put = (body) => ({ method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+
+test('actualiza nombre y descripcion conservando el id', async (t) => {
+  let received;
+  const request = await withApi(t, { actualizar: async (id, body) => (received = { id, ...body }) });
+  const response = await request('/departamentos/IT', put({ id: 'IT', nombre: ' Tecnología ', descripcion: 'TI y plataformas' }));
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), { id: 'IT', nombre: 'Tecnología', descripcion: 'TI y plataformas' });
+  assert.deepEqual(received, { id: 'IT', nombre: 'Tecnología', descripcion: 'TI y plataformas' });
+});
+
+test('actualizar un departamento inexistente devuelve 404', async (t) => {
+  const request = await withApi(t, { actualizar: async () => undefined });
+  assert.equal((await request('/departamentos/NOPE', put({ nombre: 'x', descripcion: 'y' }))).status, 404);
+});
+
+for (const body of [{}, [], { nombre: 'x' }, { nombre: ' ', descripcion: 'y' }, { nombre: 'x', descripcion: 'y', extra: 1 },
+  { id: 'OTRO', nombre: 'x', descripcion: 'y' }]) {
+  test(`rechaza actualización inválida: ${JSON.stringify(body)}`, async (t) => {
+    const request = await withApi(t, { actualizar: () => assert.fail('No debe persistir') });
+    assert.equal((await request('/departamentos/IT', put(body))).status, 400);
+  });
+}
+
+test('elimina un departamento y responde 404 si no existe', async (t) => {
+  const existentes = new Set(['IT']);
+  const request = await withApi(t, { eliminar: async (id) => existentes.delete(id) });
+  const eliminado = await request('/departamentos/IT', { method: 'DELETE' });
+  assert.equal(eliminado.status, 204);
+  assert.equal(await eliminado.text(), '');
+  assert.equal((await request('/departamentos/IT', { method: 'DELETE' })).status, 404);
+});
+
+test('cada respuesta identifica la instancia que la atendió', async (t) => {
+  const request = await withApi(t, { listar: async () => [] });
+  assert.ok((await request('/departamentos')).headers.get('x-instance-id'));
+});

@@ -28,13 +28,21 @@ class Repository:
     def ensure_schema(self):
         if self._schema_ready:
             return
-        self._execute("ALTER TABLE empleados ADD COLUMN IF NOT EXISTS fecha_retiro TIMESTAMPTZ NULL")
-        self._execute("ALTER TABLE empleados ADD COLUMN IF NOT EXISTS motivo_retiro TEXT NULL")
-        self._execute("ALTER TABLE empleados DROP CONSTRAINT IF EXISTS empleados_estado_check")
-        self._execute(
-            "ALTER TABLE empleados ADD CONSTRAINT empleados_estado_check "
-            "CHECK (estado IN ('ACTIVO', 'PENDIENTE', 'RECHAZADO', 'RETIRADO'))"
-        )
+        # Una sola transacción: el primer ALTER bloquea la tabla, así dos réplicas que arrancan
+        # a la vez migran en serie en lugar de pisarse.
+        with psycopg.connect(**self.config) as conn:
+            conn.execute("ALTER TABLE empleados ADD COLUMN IF NOT EXISTS fecha_retiro TIMESTAMPTZ NULL")
+            conn.execute("ALTER TABLE empleados ADD COLUMN IF NOT EXISTS motivo_retiro TEXT NULL")
+            conn.execute("ALTER TABLE empleados DROP CONSTRAINT IF EXISTS empleados_estado_check")
+            conn.execute(
+                "ALTER TABLE empleados ADD CONSTRAINT empleados_estado_check "
+                "CHECK (estado IN ('ACTIVO', 'EN_VACACIONES', 'PENDIENTE', 'RECHAZADO', 'RETIRADO'))"
+            )
+            # Deduplicación de eventos consumidos (campo id del envelope)
+            conn.execute(
+                "CREATE TABLE IF NOT EXISTS eventos_procesados ("
+                "id UUID PRIMARY KEY, procesado_en TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP)"
+            )
         self._schema_ready = True
 
     def ready(self):
@@ -89,6 +97,27 @@ class Repository:
             (estado, empleado_id),
         )
         return Empleado(**row) if row else None
+
+    def aplicar_vacaciones(self, event_id, empleado_id, iniciadas):
+        """Aplica vacaciones.iniciadas/finalizadas de forma idempotente.
+
+        El id del evento y el cambio de estado se confirman en la misma transacción, de modo que
+        una reentrega (o la otra réplica) no repite el efecto. Devuelve (evento_nuevo, empleado).
+        """
+        self.ensure_schema()
+        origen, destino = ("ACTIVO", "EN_VACACIONES") if iniciadas else ("EN_VACACIONES", "ACTIVO")
+        with psycopg.connect(**self.config, row_factory=dict_row) as conn:
+            nuevo = conn.execute(
+                "INSERT INTO eventos_procesados (id) VALUES (%s) ON CONFLICT DO NOTHING RETURNING id",
+                (event_id,),
+            ).fetchone()
+            if nuevo is None:
+                return False, None
+            row = conn.execute(
+                f"UPDATE empleados SET estado = %s WHERE id = %s AND estado = %s RETURNING {COLUMNS}",
+                (destino, empleado_id, origen),
+            ).fetchone()
+            return True, Empleado(**row) if row else None
 
     def actualizar(self, empleado_id, cambios):
         row = self._query(

@@ -1,5 +1,6 @@
 package co.edu.uq.notificaciones;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
@@ -93,5 +94,34 @@ class EventProcessorTest {
         verify(jdbc).update(startsWith("INSERT INTO notificaciones"), eq(accountId), eq("CUENTA"),
             eq("ana@example.test"), eq("Cuenta activada: FIN_VACACIONES"),
             eq("E001"), eq(null), eq(null));
+    }
+
+    @Test void sendsEmailWithSpecificTemplateAndCountsTheNotification() throws Exception {
+        var id = UUID.randomUUID();
+        var email = org.mockito.Mockito.mock(EmailSender.class);
+        var meters = new io.micrometer.core.instrument.simple.SimpleMeterRegistry();
+        var withEmail = new EventProcessor(jdbc, mapper, email, meters);
+        when(jdbc.update(startsWith("INSERT INTO eventos_procesados"), eq(id))).thenReturn(1);
+        when(email.send(any(), eq("ana@example.test"), any())).thenReturn(true);
+
+        assertTrue(withEmail.process(event(id, "cuenta.desactivada", "auth-service", Map.of(
+            "empleadoId", "E001", "email", "ana@example.test", "motivo", "VACACIONES", "permanente", false))));
+
+        verify(email).send(eq(java.util.List.of("cuenta.desactivada.VACACIONES", "cuenta.desactivada")),
+            eq("ana@example.test"), any());
+        assertEquals(1.0, meters.get("notificaciones.enviadas").tag("correo", "enviado").counter().count());
+    }
+
+    @Test void duplicatedEventSendsNoEmail() throws Exception {
+        var id = UUID.randomUUID();
+        var email = org.mockito.Mockito.mock(EmailSender.class);
+        var withEmail = new EventProcessor(jdbc, mapper, email, new io.micrometer.core.instrument.simple.SimpleMeterRegistry());
+        when(jdbc.update(startsWith("INSERT INTO eventos_procesados"), eq(id))).thenReturn(0);
+
+        assertFalse(withEmail.process(event(id, "usuario.creado", "auth-service", Map.of(
+            "empleadoId", "E001", "email", "ana@example.test", "tokenActivacion", "token-de-prueba",
+            "expiraEn", "2026-10-04T12:30:00Z"))));
+
+        verify(email, never()).send(any(), any(), any());
     }
 }

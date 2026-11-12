@@ -1,0 +1,14 @@
+Asunto: Confirmación de vacaciones del {{fechaInicio}} al {{fechaFin}}
+
+Hola,
+
+Recursos Humanos programó su período de vacaciones:
+
+  Inicio: {{fechaInicio}}
+  Fin:    {{fechaFin}}
+  Días hábiles: {{diasHabiles}}
+
+Su cuenta de acceso se suspenderá automáticamente el día de inicio y se reactivará
+al terminar el período. No necesita hacer nada.
+
+Recursos Humanos

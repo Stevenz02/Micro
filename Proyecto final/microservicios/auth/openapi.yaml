@@ -1,0 +1,204 @@
+openapi: 3.1.0
+info:
+  title: Proyecto final - Autenticación
+  description: Identidad local con JWT HS256 y cuentas por empleado.
+  version: 1.0.0
+paths:
+  /health:
+    get:
+      tags:
+      - Salud
+      summary: Health
+      operationId: health_health_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+  /auth/login:
+    post:
+      tags:
+      - Autenticación
+      summary: Login
+      operationId: login_auth_login_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /auth/recover-password:
+    post:
+      tags:
+      - Autenticación
+      summary: Recover Password
+      operationId: recover_password_auth_recover_password_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RecoverRequest'
+        required: true
+      responses:
+        '202':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /auth/reset-password:
+    post:
+      tags:
+      - Autenticación
+      summary: Reset Password
+      operationId: reset_password_auth_reset_password_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ResetRequest'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /auth/change-password:
+    post:
+      tags:
+      - Autenticación
+      summary: Change Password
+      operationId: change_password_auth_change_password_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ChangeRequest'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+      security:
+      - BearerAuth: []
+components:
+  schemas:
+    ChangeRequest:
+      properties:
+        currentPassword:
+          type: string
+          title: Currentpassword
+        newPassword:
+          type: string
+          title: Newpassword
+      additionalProperties: false
+      type: object
+      required:
+      - currentPassword
+      - newPassword
+      title: ChangeRequest
+    HTTPValidationError:
+      properties:
+        detail:
+          items:
+            $ref: '#/components/schemas/ValidationError'
+          type: array
+          title: Detail
+      type: object
+      title: HTTPValidationError
+    LoginRequest:
+      properties:
+        email:
+          type: string
+          title: Email
+        password:
+          type: string
+          title: Password
+      additionalProperties: false
+      type: object
+      required:
+      - email
+      - password
+      title: LoginRequest
+    RecoverRequest:
+      properties:
+        email:
+          type: string
+          title: Email
+      additionalProperties: false
+      type: object
+      required:
+      - email
+      title: RecoverRequest
+    ResetRequest:
+      properties:
+        token:
+          type: string
+          title: Token
+        newPassword:
+          type: string
+          title: Newpassword
+      additionalProperties: false
+      type: object
+      required:
+      - token
+      - newPassword
+      title: ResetRequest
+    ValidationError:
+      properties:
+        loc:
+          items:
+            anyOf:
+            - type: string
+            - type: integer
+          type: array
+          title: Location
+        msg:
+          type: string
+          title: Message
+        type:
+          type: string
+          title: Error Type
+      type: object
+      required:
+      - loc
+      - msg
+      - type
+      title: ValidationError
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer

@@ -6,6 +6,7 @@ from typing import Callable
 
 from fastapi import Depends, FastAPI, HTTPException
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from prometheus_client import Counter
 from pydantic import BaseModel, ConfigDict
 
 from shared.observability import broker_up, health_response, no_tracing, setup_observability
@@ -18,6 +19,10 @@ from .repository import ACTIVE, RETIRED, Repository
 
 logger = logging.getLogger(__name__)
 bearer = HTTPBearer(auto_error=False, scheme_name="BearerAuth")
+
+# Métricas de negocio del ciclo de vida de la cuenta
+LOGINS = Counter("auth_logins_total", "Intentos de inicio de sesión", ["resultado"])
+CUENTAS_ACTIVADAS = Counter("cuentas_activadas_total", "Cuentas activadas por su titular con el token de activación")
 
 
 class LoginRequest(BaseModel):
@@ -69,7 +74,7 @@ def create_app(repository=None, settings=None, recovery_sender: Callable | None 
             if app.state.consumer is not None:
                 app.state.consumer.stop()
 
-    app = FastAPI(title="Reto 8 - Auth Service", version="8.0.0", lifespan=lifespan,
+    app = FastAPI(title="Proyecto final - Autenticación", version="1.0.0", lifespan=lifespan,
                   docs_url="/auth/docs", openapi_url="/auth/openapi.json", redoc_url=None,
                   description="Identidad local con JWT HS256 y cuentas por empleado.")
 
@@ -99,7 +104,9 @@ def create_app(repository=None, settings=None, recovery_sender: Callable | None 
     def login(data: LoginRequest):
         account = app.state.repository.get_by_email(data.email)
         if account is None or account.status != ACTIVE or not check_password(data.password, account.password_hash):
+            LOGINS.labels(resultado="fallido").inc()
             raise HTTPException(401, "Credenciales inválidas")
+        LOGINS.labels(resultado="exitoso").inc()
         token = issue_access(app.state.settings.jwt_secret, account.employee_id, account.role,
                              app.state.settings.access_ttl_seconds)
         return {"access_token": token, "token_type": "bearer",
@@ -142,6 +149,7 @@ def create_app(repository=None, settings=None, recovery_sender: Callable | None 
         if updated is None:
             raise HTTPException(400, "Token de recuperación inválido")
         if account.status != ACTIVE and updated.status == ACTIVE:
+            CUENTAS_ACTIVADAS.inc()
             try:
                 if activation_sender is not None:
                     activation_sender(updated)

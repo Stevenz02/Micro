@@ -1,0 +1,8 @@
+Asunto: Su cuenta quedó suspendida durante sus vacaciones
+
+Hola,
+
+Hoy inicia su período de vacaciones, por lo que la cuenta {{email}} quedó suspendida
+temporalmente. Se reactivará de forma automática cuando regrese.
+
+Recursos Humanos

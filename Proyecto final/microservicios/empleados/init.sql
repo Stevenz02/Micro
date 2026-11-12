@@ -10,7 +10,7 @@ CREATE TABLE empleados (
     area            TEXT NOT NULL,
     departamento_id TEXT NOT NULL,
     fecha_ingreso   DATE NOT NULL,
-    estado          TEXT NOT NULL DEFAULT 'ACTIVO' CHECK (estado IN ('ACTIVO', 'PENDIENTE', 'RECHAZADO', 'RETIRADO')),
+    estado          TEXT NOT NULL DEFAULT 'ACTIVO' CHECK (estado IN ('ACTIVO', 'EN_VACACIONES', 'PENDIENTE', 'RECHAZADO', 'RETIRADO')),
     fecha_retiro    TIMESTAMPTZ NULL,
     motivo_retiro   TEXT NULL,
     CHECK ((estado = 'RETIRADO' AND fecha_retiro IS NOT NULL) OR (estado <> 'RETIRADO' AND fecha_retiro IS NULL))

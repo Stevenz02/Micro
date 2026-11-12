@@ -1,0 +1,222 @@
+openapi: 3.0.3
+info:
+  title: Proyecto final - Perfiles
+  version: 1.0.0
+  description: 'Perfil personal del empleado. Se crea y sincroniza por eventos (empleado.creado, empleado.actualizado)
+    y se archiva con empleado.retirado. Cada empleado solo puede modificar su propio perfil: el API Gateway responde
+    403 si el token pertenece a otro empleado.'
+servers:
+- url: /
+paths:
+  /perfiles:
+    get:
+      tags:
+      - Perfiles
+      summary: Listar perfiles
+      responses:
+        '200':
+          description: Perfiles registrados
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Perfil'
+        '401':
+          description: Token ausente o inválido
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '503':
+          description: Base de datos no disponible
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /perfiles/{empleadoId}:
+    get:
+      tags:
+      - Perfiles
+      summary: Obtener el perfil de un empleado
+      parameters: &id001
+      - in: path
+        name: empleadoId
+        required: true
+        schema:
+          type: string
+        description: Identificador del empleado dueño del perfil
+      responses:
+        '200':
+          description: Perfil encontrado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Perfil'
+        '401':
+          description: Token ausente o inválido
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Perfil no encontrado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '503':
+          description: Base de datos no disponible
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+    put:
+      tags:
+      - Perfiles
+      summary: Actualizar el perfil propio
+      parameters: *id001
+      description: Solo se aceptan los campos editables por el empleado; los datos laborales se sincronizan desde
+        Empleados.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PerfilUpdate'
+      responses:
+        '200':
+          description: Perfil actualizado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Perfil'
+        '400':
+          description: JSON inválido, campo protegido o desconocido
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Token ausente o inválido
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: El perfil pertenece a otro empleado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Perfil no encontrado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '503':
+          description: Base de datos no disponible
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /health:
+    get:
+      tags:
+      - Salud
+      summary: Estado del servicio y de sus dependencias
+      responses:
+        '200':
+          description: Servicio operativo
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Salud'
+        '503':
+          description: Alguna dependencia está caída
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Salud'
+components:
+  schemas:
+    Perfil:
+      type: object
+      properties:
+        id:
+          type: string
+        empleadoId:
+          type: string
+          example: E001
+        nombre:
+          type: string
+        apellido:
+          type: string
+        email:
+          type: string
+          format: email
+        cargo:
+          type: string
+        area:
+          type: string
+        departamentoId:
+          type: string
+        telefono:
+          type: string
+        direccion:
+          type: string
+        ciudad:
+          type: string
+        biografia:
+          type: string
+        fechaCreacion:
+          type: string
+          format: date-time
+        archivado:
+          type: boolean
+          description: true cuando el empleado fue retirado
+    PerfilUpdate:
+      type: object
+      additionalProperties: false
+      properties:
+        telefono:
+          type: string
+          example: '3001234567'
+        direccion:
+          type: string
+          example: 'Calle 10 # 5-20'
+        ciudad:
+          type: string
+          example: Armenia
+        biografia:
+          type: string
+          example: Ingeniera de plataforma
+    Error:
+      type: object
+      required:
+      - detail
+      properties:
+        detail:
+          type: string
+    Salud:
+      type: object
+      required:
+      - status
+      - service
+      - checks
+      properties:
+        status:
+          type: string
+          enum:
+          - UP
+          - DOWN
+        service:
+          type: string
+        checks:
+          type: object
+          additionalProperties:
+            type: string
+            enum:
+            - UP
+            - DOWN

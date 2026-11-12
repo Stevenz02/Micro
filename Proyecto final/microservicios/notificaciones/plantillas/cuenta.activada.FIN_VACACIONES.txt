@@ -1,0 +1,8 @@
+Asunto: Bienvenido(a) de regreso: su cuenta fue reactivada
+
+Hola,
+
+Su período de vacaciones terminó y la cuenta {{email}} fue reactivada automáticamente.
+Puede iniciar sesión con su contraseña habitual.
+
+Recursos Humanos

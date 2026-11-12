@@ -1,4 +1,5 @@
 import express from 'express';
+import os from 'node:os';
 import swaggerUi from 'swagger-ui-express';
 import { openapi } from './openapi.js';
 import { SERVICE_NAME, chaosMiddleware, logger, metricsHandler, metricsMiddleware } from './observability.js';
@@ -8,6 +9,8 @@ export function createApp(repository) {
   app.disable('x-powered-by');
   // Reto 8: métricas primero para medir también los errores de parseo
   app.use(metricsMiddleware);
+  // Servicio replicado: cada respuesta indica qué instancia la atendió (demo del balanceo)
+  app.use((req, res, next) => { res.set('X-Instance-Id', os.hostname()); next(); });
   app.use(chaosMiddleware());
   app.get('/metrics', metricsHandler);
   app.use(express.json({ limit: '64kb' }));
@@ -37,6 +40,28 @@ export function createApp(repository) {
     const department = await repository.obtener(req.params.id);
     if (!department) return res.status(404).json({ detail: `El departamento con id ${req.params.id} no existe` });
     res.json(department);
+  });
+  app.put('/departamentos/:id', async (req, res) => {
+    const fields = ['nombre', 'descripcion'];
+    // El id es inmutable: si viene en el cuerpo debe coincidir con el de la ruta
+    if (!req.body || Array.isArray(req.body) ||
+        fields.some((key) => typeof req.body[key] !== 'string' || !req.body[key].trim()) ||
+        Object.keys(req.body).some((key) => !fields.includes(key) && key !== 'id') ||
+        (req.body.id !== undefined && req.body.id !== req.params.id)) {
+      return res.status(400).json({ detail: 'Se requieren nombre y descripcion como textos no vacíos; el id no puede cambiar' });
+    }
+    const department = await repository.actualizar(req.params.id,
+      { nombre: req.body.nombre.trim(), descripcion: req.body.descripcion.trim() });
+    if (!department) return res.status(404).json({ detail: `El departamento con id ${req.params.id} no existe` });
+    logger.info('Departamento actualizado', { departamentoId: department.id });
+    res.json(department);
+  });
+  app.delete('/departamentos/:id', async (req, res) => {
+    if (!await repository.eliminar(req.params.id)) {
+      return res.status(404).json({ detail: `El departamento con id ${req.params.id} no existe` });
+    }
+    logger.info('Departamento eliminado', { departamentoId: req.params.id });
+    res.status(204).end();
   });
   app.use((req, res) => res.status(404).json({ detail: 'Recurso no encontrado' }));
   app.use((err, req, res, next) => {
