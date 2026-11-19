@@ -1,5 +1,5 @@
 # Reto 8 - Prometheus (modelo PULL): cada 15 s "raspa" el endpoint de métricas de los 7 microservicios.
-# Los targets son los NOMBRES DE SERVICIO de docker-compose.yml (DNS interno de la red microservices-network).
+# Los targets son los NOMBRES DE SERVICIO de docker-compose.yml (DNS interno de la red observability).
 global:
   scrape_interval: 15s
   scrape_timeout: 10s

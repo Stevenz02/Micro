@@ -34,8 +34,6 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
-      security:
-      - BearerAuth: []
   /perfiles/{empleadoId}:
     get:
       tags:
@@ -73,8 +71,6 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
-      security:
-      - BearerAuth: []
     put:
       tags:
       - Perfiles
@@ -86,8 +82,8 @@ paths:
         schema:
           type: string
         description: Identificador del empleado dueño del perfil
-      description: Solo se aceptan los campos editables por el empleado; los datos laborales se sincronizan desde
-        Empleados.
+      description: Actualización parcial del perfil propio (contacto, dirección completa, foto, biografía y redes
+        sociales).
       requestBody:
         required: true
         content:
@@ -102,7 +98,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/Perfil'
         '400':
-          description: JSON inválido, campo protegido o desconocido
+          description: JSON inválido, campo protegido o desconocido, o valor fuera de las reglas
           content:
             application/json:
               schema:
@@ -131,8 +127,6 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
-      security:
-      - BearerAuth: []
   /health:
     get:
       tags:
@@ -180,8 +174,23 @@ components:
           type: string
         ciudad:
           type: string
+        codigoPostal:
+          type: string
+          example: '630001'
         biografia:
           type: string
+        fotoUrl:
+          type: string
+          format: uri
+          example: https://cdn.empresa.com/fotos/E001.jpg
+        redesSociales:
+          type: object
+          additionalProperties:
+            type: string
+            format: uri
+          example:
+            linkedin: https://www.linkedin.com/in/ana
+            github: https://github.com/ana
         fechaCreacion:
           type: string
           format: date-time
@@ -191,19 +200,48 @@ components:
     PerfilUpdate:
       type: object
       additionalProperties: false
+      minProperties: 1
+      description: 'Actualización parcial: solo cambian los campos enviados; una cadena vacía borra el valor. Nombre,
+        apellido, email, cargo, área y departamento los gestiona RR. HH. en Empleados y aquí son de solo lectura.'
       properties:
         telefono:
           type: string
+          maxLength: 20
+          pattern: ^[0-9+()\- ]{7,20}$
           example: '3001234567'
         direccion:
           type: string
+          maxLength: 200
           example: 'Calle 10 # 5-20'
         ciudad:
           type: string
+          maxLength: 100
           example: Armenia
+        codigoPostal:
+          type: string
+          maxLength: 10
+          pattern: ^[A-Za-z0-9 -]{3,10}$
+          example: '630001'
         biografia:
           type: string
+          maxLength: 1000
           example: Ingeniera de plataforma
+        fotoUrl:
+          type: string
+          format: uri
+          maxLength: 2048
+          description: URL http(s) de la foto de perfil
+          example: https://cdn.empresa.com/fotos/E001.jpg
+        redesSociales:
+          type: object
+          description: 'Reemplaza el conjunto completo. Claves admitidas: linkedin, github, x, instagram, facebook,
+            sitioWeb.'
+          additionalProperties:
+            type: string
+            format: uri
+          example:
+            linkedin: https://www.linkedin.com/in/ana
+            github: https://github.com/ana
     Error:
       type: object
       required:
@@ -232,8 +270,3 @@ components:
             enum:
             - UP
             - DOWN
-  securitySchemes:
-    BearerAuth:
-      type: http
-      scheme: bearer
-      bearerFormat: JWT

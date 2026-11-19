@@ -142,9 +142,11 @@ Todas las rutas pasan por el Gateway (`http://localhost:8080`). Salvo las tres p
 | GET / POST | `/departamentos` | Listar / crear departamentos | autenticado / ADMIN |
 | GET / PUT / DELETE | `/departamentos/{id}` | Consultar / actualizar / eliminar | autenticado / ADMIN |
 | GET | `/perfiles/{empleadoId}` | Obtener perfil | autenticado |
-| PUT | `/perfiles/{empleadoId}` | Actualizar perfil (**solo el propio**; otro → 403) | dueño o ADMIN |
+| PUT | `/perfiles/{empleadoId}` | Actualizar perfil (**solo el propio**; otro → 403): contacto, dirección completa, foto, biografía y redes sociales | dueño o ADMIN |
 | POST | `/vacaciones` | Programar vacaciones | ADMIN |
 | GET | `/vacaciones` | Consultar vacaciones (`?empleadoId=`) | autenticado |
+| PUT | `/vacaciones/{id}` | Reprogramar un período que aún no inicia | ADMIN |
+| DELETE | `/vacaciones/{id}` | Cancelar un período que aún no inicia | ADMIN |
 | GET | `/notificaciones/{empleadoId}` | Historial de notificaciones | autenticado |
 | GET | `/health` | Estado del Gateway y de sus servicios | público |
 
@@ -177,6 +179,12 @@ curl -s -X POST $BASE/auth/reset-password -H 'Content-Type: application/json' \
 
 # 4) Empleado + perfil en una sola respuesta
 curl -s $BASE/empleados/E001/completo -H "$AUTH"
+
+# 4b) El empleado completa su perfil (con SU token; solo cambian los campos enviados)
+curl -s -X PUT $BASE/perfiles/E001 -H "Authorization: Bearer <TOKEN_DEL_EMPLEADO>" -H 'Content-Type: application/json' \
+  -d '{"telefono":"3001234567","direccion":"Calle 10 # 5-20","ciudad":"Armenia","codigoPostal":"630001",
+       "fotoUrl":"https://cdn.empresa.com/fotos/E001.jpg",
+       "redesSociales":{"linkedin":"https://www.linkedin.com/in/ana","github":"https://github.com/ana"}}'
 
 # 5) Programar vacaciones (fechas en UTC, no pasadas, sin solapamiento)
 curl -s -X POST $BASE/vacaciones -H "$AUTH" -H 'Content-Type: application/json' \

@@ -48,7 +48,7 @@ paths:
     get:
       tags:
       - Vacaciones
-      parameters:
+      parameters: &id001
       - name: id
         in: path
         required: true
@@ -61,6 +61,32 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Vacacion'
+        '404':
+          description: Not Found
+      security:
+      - BearerAuth: []
+    put:
+      tags:
+      - Vacaciones
+      summary: Reprogramar un período que aún no inicia
+      description: Solo para vacaciones PROGRAMADA cuyo inicio es posterior a hoy (UTC). Aplica las mismas validaciones
+        que la creación y vuelve a publicar vacaciones.programadas.
+      parameters: *id001
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/VacacionReprogramacion'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Vacacion'
+        '400':
+          description: Bad Request
         '404':
           description: Not Found
       security:
@@ -126,6 +152,21 @@ components:
         fechaFin:
           type: string
           format: date
+      additionalProperties: false
+    VacacionReprogramacion:
+      required:
+      - fechaInicio
+      - fechaFin
+      type: object
+      properties:
+        fechaInicio:
+          type: string
+          format: date
+          example: '2026-12-15'
+        fechaFin:
+          type: string
+          format: date
+          example: '2026-12-30'
       additionalProperties: false
   securitySchemes:
     BearerAuth:

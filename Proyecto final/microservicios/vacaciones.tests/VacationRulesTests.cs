@@ -19,4 +19,18 @@ public class VacationRulesTests {
     [InlineData(21,30,10,20,false)]
     public void InclusiveOverlapCases(int ns, int ne, int es, int ee, bool expected) => Assert.Equal(expected,
         VacationRules.Overlaps(Today.AddDays(ns), Today.AddDays(ne), Today.AddDays(es), Today.AddDays(ee)));
+    [Fact] public void ReschedulesFutureProgrammedVacation() => Assert.Null(
+        VacationRules.ValidateReschedule("PROGRAMADA", Today.AddDays(5), Today.AddDays(10), Today.AddDays(12), Today));
+    [Theory]
+    [InlineData("EN_CURSO")]
+    [InlineData("FINALIZADA")]
+    [InlineData("CANCELADA")]
+    public void RejectsRescheduleOutsideProgrammedState(string estado) => Assert.NotNull(
+        VacationRules.ValidateReschedule(estado, Today.AddDays(5), Today.AddDays(10), Today.AddDays(12), Today));
+    [Fact] public void RejectsRescheduleOfVacationStartingToday() => Assert.NotNull(
+        VacationRules.ValidateReschedule("PROGRAMADA", Today, Today.AddDays(10), Today.AddDays(12), Today));
+    [Fact] public void RescheduleKeepsDateRules() {
+        Assert.NotNull(VacationRules.ValidateReschedule("PROGRAMADA", Today.AddDays(5), Today.AddDays(-1), Today.AddDays(2), Today));
+        Assert.NotNull(VacationRules.ValidateReschedule("PROGRAMADA", Today.AddDays(5), Today.AddDays(9), Today.AddDays(8), Today));
+    }
 }

@@ -15,8 +15,9 @@ Dónde se cumple cada requisito del proyecto final.
 | Suspensión temporal (vacaciones) distinta de baja permanente (retiro) | `auth_app/repository.py`, `lifecycle.py` |
 | Sin endpoint público de registro | No existe `/register`; rutas públicas en `api-gateway/gateway_app/main.py` (`PUBLIC_ROUTES`) |
 | Perfil propio; modificar el de otro responde `403` | Gateway (autorización por propiedad) + `microservicios/perfiles` |
+| Información complementaria: foto, biografía, redes sociales, dirección completa (con código postal) | `microservicios/perfiles/profile.go` (validación) y `store.go` |
 | Archivado del perfil al retirar | `microservicios/perfiles/consumer.go` |
-| Vacaciones: validaciones y scheduler de inicio/fin | `microservicios/vacaciones` (`VacationScheduler.cs`) |
+| Vacaciones: CRUD (crear, consultar, reprogramar, cancelar), validaciones y scheduler de inicio/fin | `microservicios/vacaciones` (`Program.cs`, `VacationScheduler.cs`) |
 | Notificaciones por correo con plantillas configurables | `microservicios/notificaciones` (`EmailSender.java`, `plantillas/`) + Mailpit |
 | Eventos según el catálogo; consumidores idempotentes | [eventos.md](eventos.md); tabla `eventos_procesados` en cada consumidor |
 | Gateway: punto único, enrutamiento, validación de token | `microservicios/api-gateway` |
@@ -33,6 +34,7 @@ Dónde se cumple cada requisito del proyecto final.
 | Pipeline Jenkins: build, test, calidad, package | `microservicios/<servicio>/Jenkinsfile`, `Jenkinsfile` |
 | Dockerfile multi-stage y configuración por entorno | `microservicios/<servicio>/Dockerfile` |
 | Compose con un solo comando, incluido Jenkins | `docker-compose.yml` |
+| Redes segmentadas por capas (frontend, backend, messaging, data, observability, CI/CD) | Sección `networks:` de `docker-compose.yml`; ver [arquitectura.md](arquitectura.md) |
 
 ## Observabilidad
 
@@ -75,8 +77,6 @@ Dónde se cumple cada requisito del proyecto final.
 ## Limitaciones conocidas
 
 - No hay Identity Provider (Keycloak); la autenticación es propia con JWT HS256.
-- El perfil gestiona teléfono, dirección, ciudad y biografía; no incluye foto, redes sociales ni
-  código postal.
-- Vacaciones permite crear, consultar y cancelar períodos, pero no editarlos.
-- Las redes Docker separan datos (una red interna por base) y CI/CD; negocio, mensajería y
-  observabilidad comparten `microservices-network`.
+- La foto de perfil se guarda como URL (`fotoUrl`); el sistema no almacena archivos de imagen.
+- Nombre, apellido, cargo y área se muestran en el perfil pero los modifica RR. HH. en Empleados
+  (fuente de verdad) y llegan por `empleado.actualizado`; el empleado no los edita desde su perfil.

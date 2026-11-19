@@ -10,7 +10,10 @@ CREATE TABLE perfiles (
     telefono TEXT NOT NULL DEFAULT '',
     direccion TEXT NOT NULL DEFAULT '',
     ciudad TEXT NOT NULL DEFAULT '',
+    codigo_postal TEXT NOT NULL DEFAULT '',
     biografia TEXT NOT NULL DEFAULT '',
+    foto_url TEXT NOT NULL DEFAULT '',
+    redes_sociales JSONB NOT NULL DEFAULT '{}'::jsonb,
     fecha_creacion TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     archivado BOOLEAN NOT NULL DEFAULT FALSE
 );

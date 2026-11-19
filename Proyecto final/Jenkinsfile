@@ -35,9 +35,9 @@ pipeline {
               "$CI_VENV/bin/python" -m pip install --disable-pip-version-check -q -r microservicios/requirements-test.txt
               mkdir -p microservicios/reports
               export COVERAGE_FILE="$PWD/microservicios/reports/.coverage"
+              # Una sola fuente de cobertura (ver microservicios/.coveragerc)
               PYTHONPATH=microservicios "$CI_VENV/bin/python" -m pytest microservicios/tests -m 'not integration' \
-                --cov=microservicios/empleados/app --cov=microservicios/auth/auth_app \
-                --cov=microservicios/api-gateway/gateway_app --cov=microservicios/shared \
+                --cov=microservicios --cov-config=microservicios/.coveragerc \
                 --cov-report=term --cov-report=xml:microservicios/reports/python-coverage.xml \
                 --junitxml=microservicios/reports/python-junit.xml
             '''

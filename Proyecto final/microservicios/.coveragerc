@@ -1,0 +1,10 @@
+# Cobertura del pipeline integral (Jenkinsfile de la raiz). Se mide todo microservicios/ como
+# UNA sola fuente para que el reporte use rutas completas (empleados/app/main.py,
+# auth/auth_app/main.py...): con varias fuentes, los archivos de igual nombre (main.py, events.py)
+# quedaban ambiguos y SonarQube les asignaba 0 %. Cada pipeline por servicio usa su propio
+# <servicio>/.coveragerc.
+[run]
+omit =
+    */tests/*
+    */rabbitmq/*
+    */hash_admin.py

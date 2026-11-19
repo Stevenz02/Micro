@@ -33,7 +33,7 @@ services:
       - rabbitmq-data:/var/lib/rabbitmq
     ports: ["127.0.0.1:${RABBITMQ_MANAGEMENT_PORT:-15672}:15672"]
     expose: ["5672"]
-    networks: [microservices-network]
+    networks: [messaging]
     # Primer arranque lento en Docker Desktop: margen amplio antes de declararlo unhealthy
     healthcheck: { test: [CMD, rabbitmq-diagnostics, -q, ping], interval: 5s, timeout: 10s, retries: 30, start_period: 60s }
 
@@ -46,7 +46,7 @@ services:
       MP_MAX_MESSAGES: 500
     ports: ["127.0.0.1:${MAILPIT_PORT:-8025}:8025"]
     expose: ["1025"]
-    networks: [microservices-network]
+    networks: [messaging]
 
   # Transitorio: declara exchange, colas y bindings y termina
   rabbitmq-setup:
@@ -58,7 +58,7 @@ services:
     volumes: ["./microservicios/rabbitmq/setup.py:/setup.py:ro"]
     command: ["/bin/sh", "-c", "export RABBITMQ_PASSWORD=\"$$(cat /run/secrets/rabbitmq_password)\"; exec python /setup.py"]
     depends_on: { rabbitmq: { condition: service_healthy } }
-    networks: [microservices-network]
+    networks: [messaging]
 
   database-empleados:
     image: postgres:16-alpine
@@ -137,7 +137,7 @@ services:
     deploy: { replicas: "${DEPARTAMENTOS_REPLICAS:-2}" }
     labels:
       traefik.enable: "true"
-      traefik.docker.network: proyecto-final_microservices-network
+      traefik.docker.network: proyecto-final_backend
       traefik.http.routers.departamentos.entrypoints: departamentos
       traefik.http.routers.departamentos.rule: "PathPrefix(`/`)"
       traefik.http.routers.departamentos.middlewares: reintento-departamentos@docker
@@ -149,7 +149,7 @@ services:
       traefik.http.services.departamentos.loadbalancer.healthcheck.interval: 5s
       traefik.http.services.departamentos.loadbalancer.healthcheck.timeout: 3s
     expose: ["8082"]
-    networks: [microservices-network, departamentos-db]
+    networks: [backend, observability, departamentos-db]
     healthcheck: { test: [CMD, node, -e, "fetch('http://127.0.0.1:8082/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"], interval: 5s, timeout: 3s, retries: 10, start_period: 10s }
 
   empleados-service:                  # Python / FastAPI -> /metrics (prometheus-fastapi-instrumentator)
@@ -184,7 +184,7 @@ services:
     deploy: { replicas: "${EMPLEADOS_REPLICAS:-2}" }
     labels:
       traefik.enable: "true"
-      traefik.docker.network: proyecto-final_microservices-network
+      traefik.docker.network: proyecto-final_backend
       traefik.http.routers.empleados.entrypoints: empleados
       traefik.http.routers.empleados.rule: "PathPrefix(`/`)"
       traefik.http.routers.empleados.middlewares: reintento-empleados@docker
@@ -196,7 +196,7 @@ services:
       traefik.http.middlewares.reintento-empleados.retry.attempts: "3"
       traefik.http.middlewares.reintento-empleados.retry.initialinterval: 100ms
     expose: ["8081"]
-    networks: [microservices-network, empleados-db]
+    networks: [backend, messaging, observability, empleados-db]
     healthcheck: { test: [CMD, python, -c, "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8081/health',timeout=2)"], interval: 5s, timeout: 3s, retries: 10, start_period: 10s }
 
   perfiles-service:                   # Go -> /metrics (prometheus/client_golang)
@@ -216,7 +216,7 @@ services:
       RABBITMQ_PASSWORD_FILE: /run/secrets/rabbitmq_password
     depends_on: { database-perfiles: { condition: service_healthy }, rabbitmq-setup: { condition: service_completed_successfully } }
     expose: ["8083"]
-    networks: [microservices-network, perfiles-db]
+    networks: [backend, messaging, observability, perfiles-db]
     healthcheck: { test: [CMD, wget, -qO-, "http://127.0.0.1:8083/health"], interval: 5s, timeout: 3s, retries: 15, start_period: 10s }
 
   notificaciones-service:             # Java / Spring Boot -> /actuator/prometheus (Micrometer)
@@ -243,7 +243,7 @@ services:
     volumes: ["./microservicios/notificaciones/plantillas:/app/plantillas:ro"]
     depends_on: { database-notificaciones: { condition: service_healthy }, rabbitmq-setup: { condition: service_completed_successfully }, mailpit: { condition: service_started } }
     expose: ["8084"]
-    networks: [microservices-network, notificaciones-db]
+    networks: [backend, messaging, observability, notificaciones-db]
     healthcheck: { test: [CMD, wget, -qO-, "http://127.0.0.1:8084/health"], interval: 5s, timeout: 3s, retries: 20, start_period: 40s }
 
   vacaciones-service:                 # .NET 8 -> /metrics (prometheus-net)
@@ -264,7 +264,7 @@ services:
       VACACIONES_SCHEDULER_INTERVAL_SECONDS: ${VACACIONES_SCHEDULER_INTERVAL_SECONDS:-5}
     depends_on: { database-vacaciones: { condition: service_healthy }, rabbitmq-setup: { condition: service_completed_successfully } }
     expose: ["8085"]
-    networks: [microservices-network, vacaciones-db]
+    networks: [backend, messaging, observability, vacaciones-db]
     healthcheck: { test: [CMD, curl, --fail, --silent, "http://127.0.0.1:8085/health"], interval: 5s, timeout: 3s, retries: 15, start_period: 20s }
 
   auth-service:                       # Python / FastAPI -> /metrics
@@ -290,7 +290,7 @@ services:
       RABBITMQ_PASSWORD_FILE: /run/secrets/rabbitmq_password
     depends_on: { database-auth: { condition: service_healthy }, rabbitmq-setup: { condition: service_completed_successfully } }
     expose: ["8086"]
-    networks: [microservices-network, auth-db]
+    networks: [backend, messaging, observability, auth-db]
     healthcheck: { test: [CMD, python, -c, "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8086/health',timeout=2)"], interval: 5s, timeout: 3s, retries: 10, start_period: 10s }
 
   api-gateway:                        # Python / FastAPI -> /metrics (primer scrape_job)
@@ -317,7 +317,7 @@ services:
       notificaciones-service: { condition: service_healthy }
       vacaciones-service: { condition: service_healthy }
     ports: ["127.0.0.1:${GATEWAY_PORT:-8080}:8080"]
-    networks: [microservices-network]
+    networks: [frontend, backend, observability]
     # Liveness del propio proceso; el /health del Gateway agrega el estado de los upstreams
     healthcheck: { test: [CMD, python, -c, "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/metrics',timeout=2)"], interval: 5s, timeout: 3s, retries: 10, start_period: 10s }
 
@@ -333,7 +333,7 @@ services:
     command:
       - --providers.docker=true
       - --providers.docker.exposedbydefault=false
-      - --providers.docker.network=proyecto-final_microservices-network
+      - --providers.docker.network=proyecto-final_backend
       - "--providers.docker.constraints=Label(`com.docker.compose.project`,`proyecto-final`)"
       - --entrypoints.empleados.address=:8081
       - --entrypoints.departamentos.address=:8082
@@ -349,11 +349,11 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock:ro
     ports: ["127.0.0.1:${LB_DASHBOARD_PORT:-8088}:8080"]
     expose: ["8081", "8082"]
-    networks: [microservices-network]
+    networks: [backend, observability]
     healthcheck: { test: [CMD, traefik, healthcheck, --ping], interval: 5s, timeout: 3s, retries: 10, start_period: 5s }
 
   # =====================================================================================
-  #  Stack de observabilidad (misma red microservices-network que los servicios)
+  #  Stack de observabilidad (red observability: los servicios exponen /metrics y envían trazas)
   # =====================================================================================
   prometheus:
     image: prom/prometheus:v2.55.1
@@ -368,7 +368,7 @@ services:
       - prometheus-data:/prometheus
     # Sin colisión de puertos en el host: Jenkins publica 8090 y Prometheus 9090
     ports: ["127.0.0.1:${PROMETHEUS_PORT:-9090}:9090"]
-    networks: [microservices-network]
+    networks: [observability]
     healthcheck: { test: [CMD, wget, -qO-, "http://127.0.0.1:9090/-/ready"], interval: 10s, timeout: 3s, retries: 10 }
 
   loki:
@@ -378,7 +378,7 @@ services:
     volumes:
       - loki-data:/loki
     expose: ["3100"]
-    networks: [microservices-network]
+    networks: [observability]
     healthcheck: { test: [CMD, wget, -qO-, "http://127.0.0.1:3100/ready"], interval: 10s, timeout: 3s, retries: 15, start_period: 15s }
 
   promtail:
@@ -390,7 +390,7 @@ services:
       # Descubre los contenedores y lee sus logs a través del socket de Docker
       - /var/run/docker.sock:/var/run/docker.sock:ro
     depends_on: { loki: { condition: service_healthy } }
-    networks: [microservices-network]
+    networks: [observability]
 
   zipkin:
     image: openzipkin/zipkin:3.4
@@ -399,7 +399,7 @@ services:
       STORAGE_TYPE: mem
       JAVA_OPTS: -Xms128m -Xmx384m
     ports: ["127.0.0.1:${ZIPKIN_PORT:-9411}:9411"]
-    networks: [microservices-network]
+    networks: [observability]
 
   grafana:
     image: grafana/grafana:11.4.0
@@ -421,7 +421,7 @@ services:
       prometheus: { condition: service_healthy }
       loki: { condition: service_healthy }
       zipkin: { condition: service_started }
-    networks: [microservices-network]
+    networks: [observability]
     healthcheck: { test: [CMD, wget, -qO-, "http://127.0.0.1:3000/api/health"], interval: 10s, timeout: 3s, retries: 15, start_period: 20s }
 
   # Integración continua (perfil "ci"). .env.example trae COMPOSE_PROFILES=ci, así que un único
@@ -520,10 +520,20 @@ services:
       - ci-secrets:/run/proyecto-final:ro
       # Código fuente del proyecto para los pipelines (solo lectura; se copia sin .env ni secrets/)
       - .:/proyecto:ro
-    networks: [ci-network, microservices-network]
+    networks: [ci-network, frontend]
 
 networks:
-  microservices-network: { driver: bridge }
+  # Segmentación por capas. Cada contenedor solo se une a las redes que necesita:
+  #   frontend       -> punto de entrada (API Gateway) y Jenkins, que ejecuta la suite BDD contra él
+  #   backend        -> Gateway, balanceador y microservicios (REST interno)
+  #   messaging      -> RabbitMQ, Mailpit y los servicios que publican/consumen eventos
+  #   observability  -> Prometheus, Loki, Promtail, Zipkin, Grafana y los servicios instrumentados
+  #   <servicio>-db  -> una red interna por base de datos: solo su microservicio la alcanza
+  #   ci-network     -> Jenkins, SonarQube y el registry
+  frontend: { driver: bridge }
+  backend: { driver: bridge }
+  messaging: { driver: bridge }
+  observability: { driver: bridge }
   ci-network: { driver: bridge }
   empleados-db: { internal: true }
   departamentos-db: { internal: true }

@@ -1,4 +1,5 @@
 using Npgsql;
+using Vacaciones.Contratos;
 using OpenTelemetry;
 using OpenTelemetry.Context.Propagation;
 using OpenTelemetry.Resources;
@@ -102,6 +103,26 @@ app.MapGet("/vacaciones", async (string? empleadoId, VacacionesRepository repo) 
 app.MapGet("/vacaciones/{id}", async (string id, VacacionesRepository repo) => {
     var item = await repo.Get(id); return item is null ? Results.NotFound(new { detail = $"La vacacion {id} no existe" }) : Results.Ok(item);
 }).Produces<Vacacion>().Produces(404);
+// Reprogramar un período que aún no inicia: mismas validaciones que al crearlo (fechas coherentes,
+// no pasadas, sin solapamiento con otros períodos del empleado, empleado activo). Se vuelve a
+// publicar vacaciones.programadas para que el empleado reciba la confirmación del nuevo período.
+app.MapPut("/vacaciones/{id}", async (string id, VacacionReprogramacion request, VacacionesRepository repo, RabbitPublisher publisher, ILogger<Program> logger) => {
+    var current = await repo.Get(id);
+    if (current is null) return Results.NotFound(new { detail = $"La vacacion {id} no existe" });
+    var error = VacationRules.ValidateReschedule(current.Estado, current.FechaInicio, request.FechaInicio, request.FechaFin, DateOnly.FromDateTime(DateTime.UtcNow));
+    if (error is not null) return Results.BadRequest(new { detail = error });
+    var employee = await repo.GetEmployee(current.EmpleadoId);
+    if (employee is null || employee.Estado == "RETIRADO" || string.IsNullOrWhiteSpace(employee.Email))
+        return Results.BadRequest(new { detail = $"El empleado {current.EmpleadoId} no esta activo" });
+    var conflict = await repo.FindConflict(current.EmpleadoId, request.FechaInicio, request.FechaFin, excludeId: id);
+    if (conflict is not null) return Results.BadRequest(new { detail = $"El periodo se solapa con {conflict.FechaInicio:yyyy-MM-dd} a {conflict.FechaFin:yyyy-MM-dd}" });
+    var updated = await repo.Reschedule(id, request.FechaInicio, request.FechaFin);
+    if (updated is null) return Results.BadRequest(new { detail = "La vacacion cambio de estado; solo se reprograman vacaciones PROGRAMADA" });
+    logger.LogInformation("Vacaciones reprogramadas {VacacionesId} para {EmployeeId}", updated.Id, updated.EmpleadoId);
+    try { publisher.PublishScheduled(updated, employee.Email); }
+    catch (Exception exception) { logger.LogError(exception, "No se pudo publicar vacaciones.programadas para {Id} tras reprogramar", updated.Id); }
+    return Results.Ok(updated);
+}).Produces<Vacacion>().Produces(400).Produces(404);
 app.MapDelete("/vacaciones/{id}", async (string id, VacacionesRepository repo) => {
     var current = await repo.Get(id);
     if (current is null) return Results.NotFound(new { detail = $"La vacacion {id} no existe" });
@@ -121,6 +142,11 @@ public static class VacationRules {
         if (end < start) return "fechaFin no puede ser anterior a fechaInicio";
         if (start < today) return "fechaInicio no puede estar en el pasado";
         return null;
+    }
+    public static string? ValidateReschedule(string estado, DateOnly currentStart, DateOnly newStart, DateOnly newEnd, DateOnly today) {
+        if (estado != "PROGRAMADA") return $"Solo se pueden reprogramar vacaciones PROGRAMADA (estado actual: {estado})";
+        if (currentStart <= today) return "No se puede reprogramar una vacacion que ya inicio";
+        return ValidateDates(newStart, newEnd, today);
     }
     public static bool Overlaps(DateOnly newStart, DateOnly newEnd, DateOnly existingStart, DateOnly existingEnd) => newStart <= existingEnd && newEnd >= existingStart;
     public static int BusinessDays(DateOnly start, DateOnly end) {
@@ -170,9 +196,12 @@ public sealed class VacacionesRepository(NpgsqlDataSource db) : IVacationSchedul
         await transaction.CommitAsync();
         return true;
     }
-    public async Task<Vacacion?> FindConflict(string employee, DateOnly start, DateOnly end) {
-        await using var cmd = db.CreateCommand($"SELECT {Columns} FROM vacaciones WHERE empleado_id=$1 AND estado IN ('PROGRAMADA','EN_CURSO') AND $2 <= fecha_fin AND $3 >= fecha_inicio ORDER BY fecha_inicio LIMIT 1");
+    // excludeId: al reprogramar, el propio período no cuenta como conflicto
+    public async Task<Vacacion?> FindConflict(string employee, DateOnly start, DateOnly end, string? excludeId = null) {
+        var exclude = excludeId is null ? "" : " AND id<>$4";
+        await using var cmd = db.CreateCommand($"SELECT {Columns} FROM vacaciones WHERE empleado_id=$1 AND estado IN ('PROGRAMADA','EN_CURSO') AND $2 <= fecha_fin AND $3 >= fecha_inicio{exclude} ORDER BY fecha_inicio LIMIT 1");
         cmd.Parameters.AddWithValue(employee); cmd.Parameters.AddWithValue(start); cmd.Parameters.AddWithValue(end);
+        if (excludeId is not null) cmd.Parameters.AddWithValue(excludeId);
         await using var reader = await cmd.ExecuteReaderAsync(); return await reader.ReadAsync() ? Read(reader) : null;
     }
     public async Task<Vacacion> Create(VacacionRequest value) {
@@ -187,6 +216,12 @@ public sealed class VacacionesRepository(NpgsqlDataSource db) : IVacationSchedul
     public async Task<List<Vacacion>> List(string? employee) {
         var sql = $"SELECT {Columns} FROM vacaciones" + (employee is null ? "" : " WHERE empleado_id=$1") + " ORDER BY fecha_inicio,id"; await using var cmd = db.CreateCommand(sql); if (employee is not null) cmd.Parameters.AddWithValue(employee);
         await using var reader = await cmd.ExecuteReaderAsync(); var result = new List<Vacacion>(); while (await reader.ReadAsync()) result.Add(Read(reader)); return result;
+    }
+    // Solo cambia si sigue PROGRAMADA: si el scheduler la inició entre la validación y el UPDATE, devuelve null
+    public async Task<Vacacion?> Reschedule(string id, DateOnly start, DateOnly end) {
+        await using var cmd = db.CreateCommand($"UPDATE vacaciones SET fecha_inicio=$2,fecha_fin=$3 WHERE id=$1 AND estado='PROGRAMADA' RETURNING {Columns}");
+        cmd.Parameters.AddWithValue(id); cmd.Parameters.AddWithValue(start); cmd.Parameters.AddWithValue(end);
+        await using var reader = await cmd.ExecuteReaderAsync(); return await reader.ReadAsync() ? Read(reader) : null;
     }
     public async Task<Vacacion> Cancel(string id) {
         await using var cmd = db.CreateCommand($"UPDATE vacaciones SET estado='CANCELADA' WHERE id=$1 RETURNING {Columns}"); cmd.Parameters.AddWithValue(id); await using var reader = await cmd.ExecuteReaderAsync(); await reader.ReadAsync(); return Read(reader);

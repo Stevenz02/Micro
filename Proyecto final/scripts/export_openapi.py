@@ -5,7 +5,7 @@ documentacion son publicas), asi el archivo versionado coincide con lo que realm
 
 Uso, con el ecosistema arriba (no requiere Python en el equipo):
 
-  docker run --rm --network proyecto-final_microservices-network -v "${PWD}:/work" -w /work \
+  docker run --rm --network proyecto-final_frontend -v "${PWD}:/work" -w /work \
     python:3.12-alpine sh -c "pip install -q pyyaml && python scripts/export_openapi.py"
 
 O, con Python y PyYAML locales:  python scripts/export_openapi.py http://localhost:8080

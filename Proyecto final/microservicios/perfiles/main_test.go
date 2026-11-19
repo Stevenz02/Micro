@@ -24,10 +24,17 @@ func (m *memoryStore) Update(_ context.Context, id string, u PerfilUpdate) (*Per
 	if id != m.perfil.EmpleadoID {
 		return nil, pgx.ErrNoRows
 	}
-	m.perfil.Telefono = u.Telefono
-	m.perfil.Direccion = u.Direccion
-	m.perfil.Ciudad = u.Ciudad
-	m.perfil.Biografia = u.Biografia
+	for dst, src := range map[*string]*string{
+		&m.perfil.Telefono: u.Telefono, &m.perfil.Direccion: u.Direccion, &m.perfil.Ciudad: u.Ciudad,
+		&m.perfil.CodigoPostal: u.CodigoPostal, &m.perfil.Biografia: u.Biografia, &m.perfil.FotoURL: u.FotoURL,
+	} {
+		if src != nil {
+			*dst = *src
+		}
+	}
+	if u.RedesSociales != nil {
+		m.perfil.RedesSociales = u.RedesSociales
+	}
 	p := m.perfil
 	return &p, nil
 }
@@ -51,10 +58,10 @@ func TestGetAndList(t *testing.T) {
 func TestPutUpdatesOwnedFields(t *testing.T) {
 	s := testStore()
 	h := routes(s)
-	r := httptest.NewRequest("PUT", "/perfiles/E1", strings.NewReader(`{"telefono":"123","direccion":"Calle 1","ciudad":"Armenia","biografia":"Bio"}`))
+	r := httptest.NewRequest("PUT", "/perfiles/E1", strings.NewReader(`{"telefono":"3001234567","direccion":"Calle 1","ciudad":"Armenia","biografia":"Bio"}`))
 	w := httptest.NewRecorder()
 	h.ServeHTTP(w, r)
-	if w.Code != 200 || s.perfil.Telefono != "123" || s.perfil.Nombre != "Ana" {
+	if w.Code != 200 || s.perfil.Telefono != "3001234567" || s.perfil.Nombre != "Ana" {
 		t.Fatalf("unexpected update: %d %+v", w.Code, s.perfil)
 	}
 }

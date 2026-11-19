@@ -30,12 +30,12 @@ flowchart TB
 
 | Capa | Componentes | Red Docker |
 |---|---|---|
-| Entrada | API Gateway (único puerto de negocio publicado) | `microservices-network` |
-| Negocio | 6 microservicios + balanceador interno | `microservices-network` |
-| Mensajería | RabbitMQ, Mailpit | `microservices-network` |
+| Entrada | API Gateway (único puerto de negocio publicado) | `frontend` |
+| Negocio | Gateway, balanceador interno y 6 microservicios | `backend` |
+| Mensajería | RabbitMQ, Mailpit y los servicios que publican o consumen eventos | `messaging` |
 | Datos | 6 PostgreSQL, uno por servicio | una red **interna** por base (`*-db`): solo su servicio la alcanza |
-| Observabilidad | Prometheus, Grafana, Loki, Promtail, Zipkin | `microservices-network` |
-| CI/CD | Jenkins, SonarQube, registry | `ci-network` |
+| Observabilidad | Prometheus, Grafana, Loki, Promtail, Zipkin y los servicios instrumentados | `observability` |
+| CI/CD | Jenkins, SonarQube, registry (Jenkins también en `frontend` para la suite BDD) | `ci-network` |
 
 Volúmenes persistentes: uno por base de datos, RabbitMQ, Prometheus, Loki, Grafana, Jenkins,
 SonarQube y el registry.

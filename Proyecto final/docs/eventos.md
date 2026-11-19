@@ -33,7 +33,7 @@ contrato se rechaza sin reencolar.
 | `usuario.recuperacion` | Autenticación | Notificaciones (correo con el token de recuperación) |
 | `cuenta.activada` | Autenticación | Notificaciones |
 | `cuenta.desactivada` | Autenticación | Notificaciones |
-| `vacaciones.programadas` | Vacaciones | Notificaciones (confirmación del período) |
+| `vacaciones.programadas` | Vacaciones | Notificaciones (confirmación del período; se vuelve a publicar al reprogramar) |
 | `vacaciones.iniciadas` | Vacaciones (scheduler) | Autenticación, Notificaciones, Empleados² |
 | `vacaciones.finalizadas` | Vacaciones (scheduler) | Autenticación, Notificaciones, Empleados² |
 
